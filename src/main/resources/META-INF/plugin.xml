@@ -1,0 +1,34 @@
+<idea-plugin>
+    <id>es.iesclaradelrey.controlex</id>
+    <name>Controlex</name>
+    <version>1.1.0</version>
+    <vendor email="ebarrabc2526@gmail.com" url="https://iesclaradelrey.es">IES Clara del Rey</vendor>
+
+    <description><![CDATA[
+        Plugin de control para examenes de programacion Java en IntelliJ IDEA.
+        <ul>
+            <li>Bloquea el examen si se detecta cualquier plugin de IA habilitado.</li>
+            <li>Captura periodicamente la pantalla a intervalos aleatorios configurables y la almacena cifrada localmente.</li>
+            <li>Transmite capturas al servidor de supervision a una frecuencia fija configurable.</li>
+            <li>Muestra el estado de conexion con el servidor en la barra de estado (verde/naranja/rojo/gris).</li>
+            <li>Recibe mensajes emergentes enviados desde el panel del profesor.</li>
+            <li>Permite actualizar las frecuencias de captura y transmision de forma remota.</li>
+        </ul>
+    ]]></description>
+
+    <idea-version since-build="242" until-build="251.*"/>
+
+    <depends>com.intellij.modules.platform</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <postStartupActivity implementation="es.iesclaradelrey.controlex.ControlexStartupActivity"/>
+
+        <projectService serviceImplementation="es.iesclaradelrey.controlex.DynamicConfig"/>
+        <projectService serviceImplementation="es.iesclaradelrey.controlex.ServerTransmitter"/>
+
+        <statusBarWidgetFactory
+            implementation="es.iesclaradelrey.controlex.ControlexStatusWidgetFactory"
+            id="ControlexStatus"
+            order="first"/>
+    </extensions>
+</idea-plugin>

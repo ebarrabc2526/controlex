@@ -1,0 +1,18 @@
+# Gradle
+.gradle/
+build/
+out/
+
+# IntelliJ
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Node
+server/node_modules/
+server/package-lock.json
+
+# OS
+.DS_Store
+Thumbs.db

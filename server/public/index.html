@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Controlex — Panel de control</title>
+<style>
+/* ── Reset ─────────────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: #f0f2f5;
+  color: #212121;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ── Toolbar ───────────────────────────────────────────────────────────────── */
+.toolbar {
+  background: #1565C0;
+  color: #fff;
+  padding: 0 16px;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(0,0,0,.3);
+  z-index: 100;
+}
+.toolbar h1 { font-size: 1.1rem; font-weight: 800; letter-spacing: 3px; white-space: nowrap; }
+.tb-count { font-size: 0.78rem; opacity: .75; white-space: nowrap; }
+.tb-sep { width: 1px; height: 28px; background: rgba(255,255,255,.25); flex-shrink: 0; }
+.spacer { flex: 1; }
+
+/* Mode buttons */
+.mode-btn {
+  background: rgba(255,255,255,.12);
+  border: 1px solid rgba(255,255,255,.35);
+  color: #fff;
+  padding: 5px 14px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: .82rem;
+  transition: background .15s;
+  white-space: nowrap;
+}
+.mode-btn:hover  { background: rgba(255,255,255,.22); }
+.mode-btn.active { background: rgba(255,255,255,.32); font-weight: 700; }
+
+/* Inline controls */
+.ctrl { display: flex; align-items: center; gap: 6px; font-size: .78rem; white-space: nowrap; }
+.ctrl label { display: flex; align-items: center; gap: 5px; cursor: pointer; }
+.ctrl input[type=range] { width: 90px; cursor: pointer; accent-color: #90CAF9; }
+.ctrl select {
+  background: rgba(255,255,255,.12);
+  border: 1px solid rgba(255,255,255,.35);
+  color: #fff;
+  border-radius: 4px;
+  padding: 3px 6px;
+  font-size: .78rem;
+  cursor: pointer;
+}
+.ctrl select option { background: #1565C0; }
+
+.tb-btn {
+  background: rgba(255,255,255,.12);
+  border: 1px solid rgba(255,255,255,.35);
+  color: #fff;
+  padding: 5px 11px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: .78rem;
+  white-space: nowrap;
+  transition: background .15s;
+}
+.tb-btn:hover { background: rgba(255,255,255,.28); }
+
+/* ── Content area ──────────────────────────────────────────────────────────── */
+#content { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+
+/* ── Grid view ─────────────────────────────────────────────────────────────── */
+#grid-wrap { flex: 1; overflow-y: auto; padding: 16px; }
+#grid-container {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--thumb-size, 240px), 1fr));
+  gap: 14px;
+}
+
+/* ── Client card ───────────────────────────────────────────────────────────── */
+.client-card {
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 1px 5px rgba(0,0,0,.10);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  transition: box-shadow .2s, outline .15s;
+}
+.client-card:hover { box-shadow: 0 4px 18px rgba(0,0,0,.15); }
+.client-card.selected { outline: 3px solid #1565C0; }
+
+.card-header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 10px 4px;
+}
+.card-num  { font-weight: 800; font-size: .88rem; color: #1565C0; min-width: 26px; }
+.dot       { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+.dot.on    { background: #43A047; }
+.dot.off   { background: #9E9E9E; }
+.card-ip   { font-size: .76rem; color: #555; font-family: monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.last-seen { font-size: .68rem; color: #aaa; white-space: nowrap; }
+
+.card-thumb { position: relative; background: #111; }
+.card-thumb img {
+  width: 100%;
+  display: block;
+  cursor: zoom-in;
+  transition: opacity .15s;
+}
+.card-thumb img:hover { opacity: .9; }
+.mosaic-check {
+  position: absolute;
+  top: 6px; right: 6px;
+  width: 18px; height: 18px;
+  cursor: pointer;
+  accent-color: #1565C0;
+}
+
+.card-info {
+  padding: 6px 10px;
+  font-size: .74rem;
+  color: #444;
+  line-height: 1.65;
+  flex: 1;
+  border-top: 1px solid #f0f0f0;
+}
+.card-info strong { font-weight: 600; color: #222; }
+
+.card-actions {
+  display: flex;
+  gap: 6px;
+  padding: 8px 10px;
+  border-top: 1px solid #f0f0f0;
+}
+.card-btn {
+  flex: 1;
+  padding: 5px 0;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  background: #fafafa;
+  cursor: pointer;
+  font-size: .74rem;
+  color: #555;
+  transition: all .15s;
+}
+.card-btn:hover { background: #1565C0; color: #fff; border-color: #1565C0; }
+
+/* ── Mosaic view ───────────────────────────────────────────────────────────── */
+#mosaic-wrap { flex: 1; overflow: hidden; padding: 8px; display: none; }
+#mosaic-container {
+  display: grid;
+  grid-template-columns: repeat(var(--mosaic-cols, 2), 1fr);
+  grid-auto-rows: 1fr;
+  gap: 8px;
+  height: 100%;
+}
+.mosaic-cell {
+  position: relative;
+  background: #111;
+  border-radius: 8px;
+  overflow: hidden;
+  min-height: 120px;
+}
+.mosaic-cell img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  cursor: zoom-in;
+}
+.mosaic-overlay {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  background: linear-gradient(transparent, rgba(0,0,0,.72));
+  color: #fff;
+  padding: 6px 10px 8px;
+  font-size: .74rem;
+  line-height: 1.5;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.mo-num { font-weight: 800; font-size: .85rem; }
+.mo-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.mo-dot.on  { background: #66BB6A; }
+.mo-dot.off { background: #9E9E9E; }
+
+/* ── Empty state ───────────────────────────────────────────────────────────── */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 60vh;
+  color: #bbb;
+  gap: 14px;
+  text-align: center;
+  line-height: 1.6;
+}
+
+/* ── Modals ─────────────────────────────────────────────────────────────────── */
+.modal {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.50);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 1000;
+}
+.modal-box {
+  background: #fff;
+  border-radius: 12px;
+  padding: 26px 28px;
+  width: 440px;
+  max-width: 95vw;
+  box-shadow: 0 10px 40px rgba(0,0,0,.25);
+}
+.modal-box h2 { font-size: 1.05rem; margin-bottom: 6px; color: #1565C0; }
+.modal-box .sub { font-size: .82rem; color: #777; margin-bottom: 16px; }
+.modal-box label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: .86rem;
+  margin-bottom: 10px;
+  gap: 12px;
+  color: #333;
+}
+.modal-box input[type=number] {
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: .88rem;
+  width: 110px;
+  text-align: right;
+}
+.modal-box textarea {
+  width: 100%;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: .9rem;
+  margin-bottom: 16px;
+  resize: vertical;
+  font-family: inherit;
+  min-height: 90px;
+}
+.modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
+.modal-actions button {
+  padding: 8px 22px;
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: .88rem;
+  border: 1px solid #ccc;
+  background: #fff;
+  color: #444;
+  transition: all .15s;
+}
+.modal-actions button:hover { border-color: #999; }
+.btn-primary { background: #1565C0 !important; color: #fff !important; border-color: #1565C0 !important; }
+.btn-primary:hover { background: #1976D2 !important; border-color: #1976D2 !important; }
+
+/* Full-screen modal */
+#modal-full { background: rgba(0,0,0,.93); flex-direction: column; gap: 12px; padding: 20px; }
+.full-close {
+  position: fixed; top: 16px; right: 16px;
+  background: rgba(255,255,255,.15);
+  color: #fff;
+  border: 1px solid rgba(255,255,255,.3);
+  border-radius: 50%;
+  width: 36px; height: 36px;
+  font-size: 1.1rem;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background .15s;
+}
+.full-close:hover { background: rgba(255,255,255,.28); }
+#full-img {
+  max-width: 100%;
+  max-height: calc(100vh - 100px);
+  object-fit: contain;
+  border-radius: 4px;
+  display: block;
+}
+#full-info { color: rgba(255,255,255,.8); font-size: .82rem; text-align: center; }
+</style>
+</head>
+<body>
+
+<!-- ── Toolbar ─────────────────────────────────────────────────────────────── -->
+<header class="toolbar">
+  <h1>CONTROLEX</h1>
+  <span class="tb-count" id="tb-count">—</span>
+
+  <div class="tb-sep"></div>
+
+  <button class="mode-btn active" id="btn-grid"   onclick="setView('grid')">⊞ Cuadrícula</button>
+  <button class="mode-btn"        id="btn-mosaic" onclick="setView('mosaic')">⊠ Mosaico</button>
+
+  <div class="tb-sep"></div>
+
+  <!-- Grid controls -->
+  <div class="ctrl" id="grid-ctrl">
+    <label>Tamaño: <input type="range" id="size-slider" min="150" max="580" value="240"
+      oninput="setThumbSize(+this.value)"></label>
+    <span id="size-label">240 px</span>
+  </div>
+
+  <!-- Mosaic controls -->
+  <div class="ctrl" id="mosaic-ctrl" style="display:none">
+    <label>Columnas:
+      <select id="mosaic-cols" onchange="setMosaicCols(this.value)">
+        <option value="1">1</option>
+        <option value="2" selected>2</option>
+        <option value="3">3</option>
+        <option value="4">4</option>
+        <option value="5">5</option>
+        <option value="6">6</option>
+        <option value="auto">Auto</option>
+      </select>
+    </label>
+  </div>
+
+  <div class="spacer"></div>
+
+  <button class="tb-btn" onclick="openMsg('*','todos los clientes')">📢 Mensaje a todos</button>
+  <button class="tb-btn" onclick="openCfg('*','todos los clientes')">⚙ Config global</button>
+
+  <div class="tb-sep"></div>
+
+  <div class="ctrl">
+    <label>Actualizar:
+      <select id="refresh-sel" onchange="setAutoRefresh(+this.value)">
+        <option value="3000">3 s</option>
+        <option value="5000" selected>5 s</option>
+        <option value="10000">10 s</option>
+        <option value="30000">30 s</option>
+        <option value="0">Manual</option>
+      </select>
+    </label>
+    <button class="tb-btn" onclick="refresh()" title="Actualizar ahora">↺</button>
+  </div>
+</header>
+
+<!-- ── Content ─────────────────────────────────────────────────────────────── -->
+<div id="content">
+  <!-- Grid view -->
+  <div id="grid-wrap">
+    <div id="grid-container" style="--thumb-size:240px"></div>
+  </div>
+
+  <!-- Mosaic view -->
+  <div id="mosaic-wrap">
+    <div id="mosaic-container" style="--mosaic-cols:2"></div>
+  </div>
+</div>
+
+<!-- ── Message modal ────────────────────────────────────────────────────────── -->
+<div id="modal-msg" class="modal" style="display:none">
+  <div class="modal-box">
+    <h2>📢 Enviar mensaje</h2>
+    <p class="sub" id="msg-sub"></p>
+    <textarea id="msg-text" placeholder="Escribe el mensaje que verá el alumno…"></textarea>
+    <div class="modal-actions">
+      <button onclick="closeModal('modal-msg')">Cancelar</button>
+      <button class="btn-primary" onclick="sendMsg()">Enviar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Config modal ─────────────────────────────────────────────────────────── -->
+<div id="modal-cfg" class="modal" style="display:none">
+  <div class="modal-box">
+    <h2>⚙ Configuración de frecuencias</h2>
+    <p class="sub" id="cfg-sub"></p>
+    <label>Captura mín. (seg): <input type="number" id="cfg-min" min="1" max="3600" value="30"></label>
+    <label>Captura máx. (seg): <input type="number" id="cfg-max" min="1" max="3600" value="120"></label>
+    <label>Transmisión (seg):  <input type="number" id="cfg-tx"  min="5" max="3600" value="30"></label>
+    <div class="modal-actions">
+      <button onclick="closeModal('modal-cfg')">Cancelar</button>
+      <button class="btn-primary" onclick="sendCfg()">Aplicar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Full-screen modal ─────────────────────────────────────────────────────── -->
+<div id="modal-full" class="modal" style="display:none" onclick="closeFull()">
+  <button class="full-close" onclick="closeFull()">✕</button>
+  <img id="full-img" src="" alt="Captura de pantalla" onclick="event.stopPropagation()">
+  <div id="full-info"></div>
+</div>
+
+<script>
+'use strict';
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let clients         = [];
+let selectedMosaic  = new Set();   // clientIds chosen for mosaic
+let currentView     = 'grid';
+let thumbSize       = 240;
+let mosaicCols      = '2';
+let refreshTimer    = null;
+let msgTargetId     = null;
+let cfgTargetId     = null;
+
+// ── Bootstrap ─────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+    refresh();
+    setAutoRefresh(5000);
+});
+
+// ── View ──────────────────────────────────────────────────────────────────────
+function setView(v) {
+    currentView = v;
+    document.getElementById('btn-grid').classList.toggle('active', v === 'grid');
+    document.getElementById('btn-mosaic').classList.toggle('active', v === 'mosaic');
+    document.getElementById('grid-ctrl').style.display    = v === 'grid'   ? '' : 'none';
+    document.getElementById('mosaic-ctrl').style.display  = v === 'mosaic' ? '' : 'none';
+    document.getElementById('grid-wrap').style.display    = v === 'grid'   ? '' : 'none';
+    document.getElementById('mosaic-wrap').style.display  = v === 'mosaic' ? '' : 'none';
+    render();
+}
+
+function setThumbSize(px) {
+    thumbSize = px;
+    document.getElementById('size-label').textContent = px + ' px';
+    document.getElementById('grid-container').style.setProperty('--thumb-size', px + 'px');
+}
+
+function setMosaicCols(val) {
+    mosaicCols = val;
+    const cols = val === 'auto' ? calcAutoCols() : val;
+    document.getElementById('mosaic-container').style.setProperty('--mosaic-cols', cols);
+    if (currentView === 'mosaic') renderMosaic();
+}
+
+function calcAutoCols() {
+    const n = selectedMosaic.size || clients.length;
+    if (n <= 1) return 1;
+    if (n <= 4) return 2;
+    if (n <= 9) return 3;
+    return 4;
+}
+
+// ── Refresh ───────────────────────────────────────────────────────────────────
+function setAutoRefresh(ms) {
+    clearInterval(refreshTimer);
+    if (ms > 0) refreshTimer = setInterval(refresh, ms);
+}
+
+async function refresh() {
+    try {
+        const res = await fetch('/api/dashboard/clients');
+        if (!res.ok) throw new Error(res.status);
+        clients = await res.json();
+        updateCount();
+        render();
+    } catch (e) {
+        console.error('Error al actualizar:', e);
+    }
+}
+
+function updateCount() {
+    const on = clients.filter(c => c.online).length;
+    document.getElementById('tb-count').textContent =
+        `${clients.length} cliente${clients.length !== 1 ? 's' : ''} · ${on} online`;
+}
+
+// ── Render ────────────────────────────────────────────────────────────────────
+function render() {
+    if (currentView === 'grid') renderGrid();
+    else renderMosaic();
+}
+
+function imgUrl(clientId) {
+    return `/api/dashboard/screenshot/${encodeURIComponent(clientId)}?t=${Date.now()}`;
+}
+
+// ·· Grid ·····················································
+function renderGrid() {
+    const gc = document.getElementById('grid-container');
+    if (!clients.length) {
+        gc.innerHTML = `<div class="empty-state">
+            <div style="font-size:3rem">🖥️</div>
+            <p>Sin clientes conectados.<br>Los alumnos deben abrir IntelliJ con el plugin activo.</p>
+        </div>`;
+        return;
+    }
+
+    // Reuse existing cards to avoid full DOM rebuild (reduces flicker)
+    const existing = new Map([...gc.querySelectorAll('.client-card')].map(el => [el.dataset.id, el]));
+    const seen = new Set();
+    const frag = document.createDocumentFragment();
+
+    for (const c of clients) {
+        seen.add(c.clientId);
+        if (existing.has(c.clientId)) {
+            updateCard(existing.get(c.clientId), c);
+        } else {
+            frag.appendChild(buildCard(c));
+        }
+    }
+    for (const [id, el] of existing) if (!seen.has(id)) el.remove();
+    if (frag.childNodes.length) gc.appendChild(frag);
+
+    // Maintain sort order
+    [...gc.querySelectorAll('.client-card')]
+        .sort((a, b) => +a.dataset.seq - +b.dataset.seq)
+        .forEach(el => gc.appendChild(el));
+}
+
+function buildCard(c) {
+    const el = document.createElement('div');
+    el.className = 'client-card' + (selectedMosaic.has(c.clientId) ? ' selected' : '');
+    el.dataset.id  = c.clientId;
+    el.dataset.seq = c.seqNum;
+    el.innerHTML   = cardInner(c);
+    return el;
+}
+
+function updateCard(el, c) {
+    el.dataset.seq = c.seqNum;
+    el.classList.toggle('selected', selectedMosaic.has(c.clientId));
+    el.querySelector('.dot').className  = 'dot ' + (c.online ? 'on' : 'off');
+    el.querySelector('.card-ip').textContent = c.ip;
+    el.querySelector('.last-seen').textContent = timeAgo(c.lastSeen);
+    el.querySelector('.card-info').innerHTML   = infoHTML(c);
+    el.querySelector('img').src = imgUrl(c.clientId);
+    const cb = el.querySelector('.mosaic-check');
+    if (cb) cb.checked = selectedMosaic.has(c.clientId);
+}
+
+function cardInner(c) {
+    const sel = selectedMosaic.has(c.clientId);
+    return `
+<div class="card-header">
+  <span class="card-num">#${c.seqNum}</span>
+  <span class="dot ${c.online ? 'on' : 'off'}"></span>
+  <span class="card-ip">${esc(c.ip)}</span>
+  <span class="last-seen">${timeAgo(c.lastSeen)}</span>
+</div>
+<div class="card-thumb">
+  <img src="${imgUrl(c.clientId)}" alt="Captura"
+       loading="lazy"
+       onclick="openFull('${esc(c.clientId)}')">
+  <input class="mosaic-check" type="checkbox" title="Incluir en mosaico"
+         ${sel ? 'checked' : ''}
+         onchange="toggleMosaic('${esc(c.clientId)}', this.checked)">
+</div>
+<div class="card-info">${infoHTML(c)}</div>
+<div class="card-actions">
+  <button class="card-btn"
+    onclick="openMsg('${esc(c.clientId)}','#${c.seqNum} ${esc(c.osUser)}')">💬 Mensaje</button>
+  <button class="card-btn"
+    onclick="openCfg('${esc(c.clientId)}','#${c.seqNum} ${esc(c.osUser)}',${c.captureFreqMin},${c.captureFreqMax},${c.transmitFreqSeconds})">⚙ Config</button>
+</div>`;
+}
+
+function infoHTML(c) {
+    return `
+<div><strong>Hostname:</strong> ${esc(c.hostname)}</div>
+<div><strong>Proyecto:</strong> ${esc(c.projectName)}</div>
+<div><strong>IntelliJ:</strong> ${esc(c.intellijUser)}</div>
+<div><strong>Sistema:</strong>  ${esc(c.osUser)}</div>
+<div><strong>Captura:</strong>  ${c.captureFreqMin}–${c.captureFreqMax} s &nbsp;|&nbsp; <strong>TX:</strong> ${c.transmitFreqSeconds} s</div>`;
+}
+
+// ·· Mosaic ···················································
+function renderMosaic() {
+    const mc   = document.getElementById('mosaic-container');
+    const targets = selectedMosaic.size
+        ? clients.filter(c => selectedMosaic.has(c.clientId))
+        : clients;
+
+    if (!targets.length) {
+        mc.innerHTML = `<div class="empty-state">
+            <p>Selecciona clientes en la cuadrícula (☑) para incluirlos en el mosaico.<br>
+            Si no hay ninguno seleccionado se muestran todos.</p>
+        </div>`;
+        mc.style.setProperty('--mosaic-cols', 1);
+        return;
+    }
+
+    const cols = mosaicCols === 'auto' ? calcAutoCols() : mosaicCols;
+    mc.style.setProperty('--mosaic-cols', cols);
+
+    const existing = new Map([...mc.querySelectorAll('.mosaic-cell')].map(el => [el.dataset.id, el]));
+    const seen = new Set();
+    const frag = document.createDocumentFragment();
+
+    for (const c of targets) {
+        seen.add(c.clientId);
+        if (existing.has(c.clientId)) {
+            const cell = existing.get(c.clientId);
+            cell.querySelector('img').src = imgUrl(c.clientId);
+            cell.querySelector('.mosaic-overlay').innerHTML = mosaicOverlay(c);
+        } else {
+            frag.appendChild(buildMosaicCell(c));
+        }
+    }
+    for (const [id, el] of existing) if (!seen.has(id)) el.remove();
+    if (frag.childNodes.length) mc.appendChild(frag);
+
+    [...mc.querySelectorAll('.mosaic-cell')]
+        .sort((a, b) => +a.dataset.seq - +b.dataset.seq)
+        .forEach(el => mc.appendChild(el));
+}
+
+function buildMosaicCell(c) {
+    const el = document.createElement('div');
+    el.className  = 'mosaic-cell';
+    el.dataset.id  = c.clientId;
+    el.dataset.seq = c.seqNum;
+    el.innerHTML = `
+<img src="${imgUrl(c.clientId)}" alt="Captura" onclick="openFull('${esc(c.clientId)}')">
+<div class="mosaic-overlay">${mosaicOverlay(c)}</div>`;
+    return el;
+}
+
+function mosaicOverlay(c) {
+    return `<span class="mo-dot ${c.online ? 'on' : 'off'}"></span>
+<span class="mo-num">#${c.seqNum}</span>
+<span>${esc(c.ip)}</span>
+<span>·</span><span>${esc(c.osUser)}</span>
+<span>·</span><span>${esc(c.projectName)}</span>`;
+}
+
+// ── Mosaic selection ──────────────────────────────────────────────────────────
+function toggleMosaic(clientId, checked) {
+    if (checked) selectedMosaic.add(clientId);
+    else selectedMosaic.delete(clientId);
+    document.querySelectorAll(`.client-card[data-id="${CSS.escape(clientId)}"]`)
+        .forEach(el => el.classList.toggle('selected', checked));
+    if (currentView === 'mosaic') renderMosaic();
+}
+
+// ── Full-screen ───────────────────────────────────────────────────────────────
+function openFull(clientId) {
+    const c = clients.find(x => x.clientId === clientId);
+    if (!c) return;
+    document.getElementById('full-img').src = imgUrl(clientId);
+    document.getElementById('full-info').textContent =
+        `#${c.seqNum}  ·  ${c.ip}  ·  ${c.intellijUser} / ${c.osUser}  ·  ${c.projectName}`;
+    document.getElementById('modal-full').style.display = 'flex';
+}
+
+function closeFull() {
+    document.getElementById('modal-full').style.display = 'none';
+    document.getElementById('full-img').src = '';
+}
+
+// ── Message dialog ────────────────────────────────────────────────────────────
+function openMsg(clientId, label, _a, _b, _c) {
+    msgTargetId = clientId;
+    document.getElementById('msg-sub').textContent  = 'Destinatario: ' + label;
+    document.getElementById('msg-text').value       = '';
+    document.getElementById('modal-msg').style.display = 'flex';
+    setTimeout(() => document.getElementById('msg-text').focus(), 60);
+}
+
+async function sendMsg() {
+    const text = document.getElementById('msg-text').value.trim();
+    if (!text) return;
+    try {
+        await fetch('/api/dashboard/message', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ clientId: msgTargetId, text })
+        });
+    } catch (e) { console.error(e); }
+    closeModal('modal-msg');
+}
+
+// ── Config dialog ─────────────────────────────────────────────────────────────
+function openCfg(clientId, label, min, max, tx) {
+    cfgTargetId = clientId;
+    document.getElementById('cfg-sub').textContent = 'Destino: ' + label;
+    document.getElementById('cfg-min').value = min  ?? 30;
+    document.getElementById('cfg-max').value = max  ?? 120;
+    document.getElementById('cfg-tx').value  = tx   ?? 30;
+    document.getElementById('modal-cfg').style.display = 'flex';
+}
+
+async function sendCfg() {
+    try {
+        await fetch('/api/dashboard/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                clientId:            cfgTargetId,
+                captureFreqMin:      +document.getElementById('cfg-min').value,
+                captureFreqMax:      +document.getElementById('cfg-max').value,
+                transmitFreqSeconds: +document.getElementById('cfg-tx').value
+            })
+        });
+    } catch (e) { console.error(e); }
+    closeModal('modal-cfg');
+}
+
+// ── Utilities ─────────────────────────────────────────────────────────────────
+function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+
+function esc(s) {
+    return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function timeAgo(iso) {
+    const sec = Math.floor((Date.now() - new Date(iso)) / 1000);
+    if (sec < 5)    return 'ahora';
+    if (sec < 60)   return `${sec}s`;
+    if (sec < 3600) return `${Math.floor(sec/60)}m`;
+    return `${Math.floor(sec/3600)}h`;
+}
+
+// Close modals on backdrop click / Escape
+['modal-msg', 'modal-cfg'].forEach(id => {
+    document.getElementById(id).addEventListener('click', function(e) {
+        if (e.target === this) closeModal(id);
+    });
+});
+document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { closeModal('modal-msg'); closeModal('modal-cfg'); closeFull(); }
+});
+</script>
+</body>
+</html>
