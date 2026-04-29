@@ -8,6 +8,17 @@ const PORT = process.env.PORT || 3000;
 const API_KEY = process.env.CONTROLEX_API_KEY || 'ControlEx-IES-ClaraDelRey-2026';
 
 app.use(express.json({ limit: '25mb' }));
+
+// Disable cache for HTML/JS/CSS (dashboard) and root path
+app.use((req, res, next) => {
+    if (req.path === '/' || /\.(html|js|css)$/.test(req.path)) {
+        res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+        res.set('Pragma', 'no-cache');
+        res.set('Expires', '0');
+    }
+    next();
+});
+
 app.use(express.static(path.join(__dirname, 'public')));
 
 // In-memory state
