@@ -81,7 +81,7 @@ app.get('/api/dashboard/clients', (req, res) => {
         .sort((a, b) => a.seqNum - b.seqNum)
         .map(c => {
             const ageMs = now - new Date(c.lastSeen).getTime();
-            const thresholdMs = c.transmitFreqSeconds * 2 * 1000;
+            const thresholdMs = c.transmitFreqSeconds * 1000 + 10_000;
             return {
                 clientId:            c.clientId,
                 seqNum:              c.seqNum,
