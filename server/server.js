@@ -24,6 +24,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 // In-memory state
 const clients = new Map();          // clientId -> ClientRecord
 const pendingCommands = new Map();  // clientId -> Command[]
+const sseClients = new Set();       // dashboard SSE connections
 let seqCounter = 0;
 
 // ── Plugin download ───────────────────────────────────────────────────────────
@@ -35,6 +36,34 @@ app.get('/plugin', (req, res) => {
         if (err) res.status(404).send('Plugin no disponible');
     });
 });
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function clientView(c) {
+    const ageMs = Date.now() - new Date(c.lastSeen).getTime();
+    const thresholdMs = c.transmitFreqSeconds * 1000 + 10_000;
+    return {
+        clientId:            c.clientId,
+        seqNum:              c.seqNum,
+        ip:                  c.ip,
+        hostname:            c.hostname,
+        projectName:         c.projectName,
+        intellijUser:        c.intellijUser,
+        osUser:              c.osUser,
+        captureFreqMin:      c.captureFreqMin,
+        captureFreqMax:      c.captureFreqMax,
+        transmitFreqSeconds: c.transmitFreqSeconds,
+        lastSeen:            c.lastSeen,
+        online:              ageMs < thresholdMs
+    };
+}
+
+function broadcast(event, data) {
+    const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+    for (const res of sseClients) {
+        try { res.write(payload); } catch (_) { /* connection closed */ }
+    }
+}
 
 // ── Auth middleware for client uploads ────────────────────────────────────────
 
@@ -61,6 +90,9 @@ app.post('/api/screenshot', requireClientAuth, (req, res) => {
 
     const existing = clients.get(clientId);
     const seqNum = existing ? existing.seqNum : ++seqCounter;
+    const wasOnline = existing
+        ? (Date.now() - new Date(existing.lastSeen).getTime()) < (existing.transmitFreqSeconds * 1000 + 10_000)
+        : false;
 
     clients.set(clientId, {
         clientId,
@@ -80,34 +112,48 @@ app.post('/api/screenshot', requireClientAuth, (req, res) => {
     if (!pendingCommands.has(clientId)) pendingCommands.set(clientId, []);
     const commands = pendingCommands.get(clientId).splice(0);
 
+    // Push update to all dashboards (new client OR existing client refresh)
+    broadcast(existing ? 'update' : 'add', clientView(clients.get(clientId)));
+
     res.json({ commands });
 });
 
 // ── Dashboard API ─────────────────────────────────────────────────────────────
 
-// List all known clients (without screenshot data)
+// SSE stream — pushes 'add'/'update'/'offline' events in real time
+app.get('/api/dashboard/stream', (req, res) => {
+    res.set({
+        'Content-Type':    'text/event-stream',
+        'Cache-Control':   'no-cache, no-transform',
+        'Connection':      'keep-alive',
+        'X-Accel-Buffering': 'no'
+    });
+    res.flushHeaders();
+
+    // Send full snapshot first
+    const snapshot = Array.from(clients.values())
+        .sort((a, b) => a.seqNum - b.seqNum)
+        .map(clientView);
+    res.write(`event: snapshot\ndata: ${JSON.stringify(snapshot)}\n\n`);
+
+    sseClients.add(res);
+
+    // Heartbeat to keep proxies happy
+    const hb = setInterval(() => {
+        try { res.write(': heartbeat\n\n'); } catch (_) {}
+    }, 25_000);
+
+    req.on('close', () => {
+        clearInterval(hb);
+        sseClients.delete(res);
+    });
+});
+
+// List all known clients (snapshot, kept for compat)
 app.get('/api/dashboard/clients', (req, res) => {
-    const now = Date.now();
     const list = Array.from(clients.values())
         .sort((a, b) => a.seqNum - b.seqNum)
-        .map(c => {
-            const ageMs = now - new Date(c.lastSeen).getTime();
-            const thresholdMs = c.transmitFreqSeconds * 1000 + 10_000;
-            return {
-                clientId:            c.clientId,
-                seqNum:              c.seqNum,
-                ip:                  c.ip,
-                hostname:            c.hostname,
-                projectName:         c.projectName,
-                intellijUser:        c.intellijUser,
-                osUser:              c.osUser,
-                captureFreqMin:      c.captureFreqMin,
-                captureFreqMax:      c.captureFreqMax,
-                transmitFreqSeconds: c.transmitFreqSeconds,
-                lastSeen:            c.lastSeen,
-                online:              ageMs < thresholdMs
-            };
-        });
+        .map(clientView);
     res.json(list);
 });
 
@@ -158,6 +204,26 @@ app.post('/api/dashboard/config', (req, res) => {
     }
     res.json({ ok: true, count: targets.length });
 });
+
+// ── Offline detector ──────────────────────────────────────────────────────────
+// Cada segundo revisa qué clientes acaban de pasar a offline y emite evento.
+
+const onlineState = new Map();  // clientId -> bool
+
+setInterval(() => {
+    for (const c of clients.values()) {
+        const ageMs = Date.now() - new Date(c.lastSeen).getTime();
+        const thresholdMs = c.transmitFreqSeconds * 1000 + 10_000;
+        const isOnline = ageMs < thresholdMs;
+        const prev = onlineState.get(c.clientId);
+        if (prev !== isOnline) {
+            onlineState.set(c.clientId, isOnline);
+            if (prev !== undefined) {
+                broadcast(isOnline ? 'online' : 'offline', clientView(c));
+            }
+        }
+    }
+}, 1000);
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 

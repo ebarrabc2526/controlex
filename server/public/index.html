@@ -343,8 +343,9 @@ body {
   <div class="tb-sep"></div>
 
   <div class="ctrl">
-    <label>Actualizar:
-      <select id="refresh-sel" onchange="setAutoRefresh(+this.value)">
+    <label>Imágenes:
+      <select id="refresh-sel" onchange="setImgRefresh(+this.value)">
+        <option value="1000">1 s</option>
         <option value="3000" selected>3 s</option>
         <option value="5000">5 s</option>
         <option value="10000">10 s</option>
@@ -352,7 +353,7 @@ body {
         <option value="0">Manual</option>
       </select>
     </label>
-    <button class="tb-btn" onclick="refresh()" title="Actualizar ahora">↺</button>
+    <button class="tb-btn" onclick="render()" title="Refrescar imágenes ahora">↺</button>
   </div>
 </header>
 
@@ -414,14 +415,71 @@ let currentView     = 'grid';
 let thumbSize       = 240;
 let mosaicCols      = '2';
 let refreshTimer    = null;
+let imgRefreshTimer = null;
+let eventSource     = null;
 let msgTargetId     = null;
 let cfgTargetId     = null;
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
-    refresh();
-    setAutoRefresh(3000);
+    connectStream();
+    setImgRefresh(3000);  // refresh thumbnails periodically (independent of state)
 });
+
+// ── SSE stream — real-time client state updates ───────────────────────────────
+function connectStream() {
+    if (eventSource) eventSource.close();
+    eventSource = new EventSource('/api/dashboard/stream');
+
+    eventSource.addEventListener('snapshot', e => {
+        clients = JSON.parse(e.data);
+        updateCount();
+        render();
+    });
+
+    eventSource.addEventListener('add', e => {
+        const c = JSON.parse(e.data);
+        clients.push(c);
+        clients.sort((a, b) => a.seqNum - b.seqNum);
+        updateCount();
+        render();
+    });
+
+    eventSource.addEventListener('update', e => {
+        const c = JSON.parse(e.data);
+        const idx = clients.findIndex(x => x.clientId === c.clientId);
+        if (idx >= 0) clients[idx] = c;
+        else { clients.push(c); clients.sort((a, b) => a.seqNum - b.seqNum); }
+        updateCount();
+        render();
+    });
+
+    const flagOffline = e => {
+        const c = JSON.parse(e.data);
+        const idx = clients.findIndex(x => x.clientId === c.clientId);
+        if (idx >= 0) clients[idx] = c;
+        updateCount();
+        render();
+    };
+    eventSource.addEventListener('online',  flagOffline);
+    eventSource.addEventListener('offline', flagOffline);
+
+    eventSource.onerror = () => {
+        // Auto-reconnect after 2s if stream drops
+        setTimeout(() => { if (eventSource.readyState === EventSource.CLOSED) connectStream(); }, 2000);
+    };
+}
+
+// Thumbnails refresh on a timer (the stream handles state, not images)
+function setImgRefresh(ms) {
+    clearInterval(imgRefreshTimer);
+    if (ms > 0) imgRefreshTimer = setInterval(() => {
+        document.querySelectorAll('.client-card img, .mosaic-cell img').forEach(img => {
+            const el = img.closest('[data-id]');
+            if (el) img.src = imgUrl(el.dataset.id);
+        });
+    }, ms);
+}
 
 // ── View ──────────────────────────────────────────────────────────────────────
 function setView(v) {
@@ -456,24 +514,7 @@ function calcAutoCols() {
     return 4;
 }
 
-// ── Refresh ───────────────────────────────────────────────────────────────────
-function setAutoRefresh(ms) {
-    clearInterval(refreshTimer);
-    if (ms > 0) refreshTimer = setInterval(refresh, ms);
-}
-
-async function refresh() {
-    try {
-        const res = await fetch('/api/dashboard/clients');
-        if (!res.ok) throw new Error(res.status);
-        clients = await res.json();
-        updateCount();
-        render();
-    } catch (e) {
-        console.error('Error al actualizar:', e);
-    }
-}
-
+// ── Counter ───────────────────────────────────────────────────────────────────
 function updateCount() {
     const on = clients.filter(c => c.online).length;
     document.getElementById('tb-count').textContent =
