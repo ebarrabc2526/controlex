@@ -159,7 +159,12 @@ function clientView(c) {
 function broadcast(event, data) {
     const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
     for (const res of sseClients) {
-        try { res.write(payload); } catch (_) {}
+        try { res.write(payload); }
+        catch (_) {
+            // dead connection — drop it so it doesn't pile up
+            sseClients.delete(res);
+            try { res.end(); } catch (_) {}
+        }
     }
 }
 
@@ -256,8 +261,21 @@ app.get('/api/dashboard/stream', requireApiAuth, (req, res) => {
     res.write(`event: snapshot\ndata: ${JSON.stringify(snapshot)}\n\n`);
 
     sseClients.add(res);
-    const hb = setInterval(() => { try { res.write(': heartbeat\n\n'); } catch (_) {} }, 25_000);
-    req.on('close', () => { clearInterval(hb); sseClients.delete(res); });
+
+    // Heartbeat every 10s — also acts as dead-connection probe
+    const hb = setInterval(() => {
+        try { res.write(': heartbeat\n\n'); }
+        catch (_) {
+            clearInterval(hb);
+            sseClients.delete(res);
+            try { res.end(); } catch (_) {}
+        }
+    }, 10_000);
+
+    const cleanup = () => { clearInterval(hb); sseClients.delete(res); };
+    req.on('close', cleanup);
+    req.on('error', cleanup);
+    res.on('error', cleanup);
 });
 
 app.get('/api/dashboard/clients', requireApiAuth, (req, res) => {

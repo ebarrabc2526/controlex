@@ -439,7 +439,9 @@ function connectStream() {
 
     eventSource.addEventListener('add', e => {
         const c = JSON.parse(e.data);
-        clients.push(c);
+        const idx = clients.findIndex(x => x.clientId === c.clientId);
+        if (idx >= 0) clients[idx] = c;  // safety: avoid duplicates
+        else clients.push(c);
         clients.sort((a, b) => a.seqNum - b.seqNum);
         updateCount();
         render();
@@ -471,12 +473,18 @@ function connectStream() {
 }
 
 // Thumbnails refresh on a timer (the stream handles state, not images)
+// Uses preload trick: load new image off-screen, swap src only when ready → no flicker
 function setImgRefresh(ms) {
     clearInterval(imgRefreshTimer);
     if (ms > 0) imgRefreshTimer = setInterval(() => {
         document.querySelectorAll('.client-card img, .mosaic-cell img').forEach(img => {
             const el = img.closest('[data-id]');
-            if (el) img.src = imgUrl(el.dataset.id);
+            if (!el) return;
+            const url = imgUrl(el.dataset.id);
+            const pre = new Image();
+            pre.onload  = () => { img.src = url; };
+            pre.onerror = () => { /* keep old image on failure */ };
+            pre.src = url;
         });
     }, ms);
 }
@@ -583,7 +591,7 @@ function updateCard(el, c) {
     el.querySelector('.card-ip').textContent = c.ip;
     el.querySelector('.last-seen').textContent = timeAgo(c.lastSeen);
     el.querySelector('.card-info').innerHTML   = infoHTML(c);
-    el.querySelector('img').src = imgUrl(c.clientId);
+    // image is refreshed independently by setImgRefresh — don't touch src here
     const cb = el.querySelector('.mosaic-check');
     if (cb) cb.checked = selectedMosaic.has(c.clientId);
 }
@@ -653,7 +661,7 @@ function renderMosaic() {
         seen.add(c.clientId);
         if (existing.has(c.clientId)) {
             const cell = existing.get(c.clientId);
-            cell.querySelector('img').src = imgUrl(c.clientId);
+            // image refreshed by setImgRefresh — don't touch src here
             cell.querySelector('.mosaic-overlay').innerHTML = mosaicOverlay(c);
         } else {
             frag.appendChild(buildMosaicCell(c));
