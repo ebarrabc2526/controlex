@@ -217,6 +217,17 @@ class ServerTransmitter(private val project: Project) : Disposable {
     override fun dispose() {
         stopped = true
         future?.cancel(false)
+        // Best-effort goodbye so the dashboard knows immediately
+        try {
+            val req = HttpRequest.newBuilder()
+                .uri(URI.create(ControlexConfig.SERVER_URL + "/api/disconnect"))
+                .header("Content-Type", "application/json; charset=utf-8")
+                .header("Authorization", "Bearer ${ControlexConfig.SERVER_API_KEY}")
+                .POST(HttpRequest.BodyPublishers.ofString("""{"clientId":${esc(clientId)}}""", StandardCharsets.UTF_8))
+                .timeout(Duration.ofSeconds(2))
+                .build()
+            http.send(req, HttpResponse.BodyHandlers.discarding())
+        } catch (_: Throwable) { /* shutdown – best effort */ }
         scheduler.shutdownNow()
     }
 }

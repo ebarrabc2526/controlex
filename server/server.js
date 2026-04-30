@@ -35,7 +35,7 @@ app.use(express.json({ limit: '25mb' }));
 app.use(session({
     secret: SESSION_SECRET,
     resave: false,
-    saveUninitialized: false,
+    saveUninitialized: true,
     cookie: { secure: true, httpOnly: true, sameSite: 'lax', maxAge: 8 * 3600 * 1000 }
 }));
 app.use(passport.initialize());
@@ -66,14 +66,21 @@ function requireDashboardAuth(req, res, next) {
 // ── Auth routes ───────────────────────────────────────────────────────────────
 
 app.get('/auth/google',
-    passport.authenticate('google', { scope: ['profile', 'email'] })
+    passport.authenticate('google', { scope: ['profile', 'email'], prompt: 'select_account' })
 );
 
 app.get('/auth/google/callback',
-    passport.authenticate('google', { failureRedirect: '/forbidden' }),
-    (req, res) => {
-        if (req.user && req.user.email === ALLOWED_EMAIL) return res.redirect('/');
-        res.redirect('/forbidden');
+    (req, res, next) => {
+        passport.authenticate('google', (err, user, info) => {
+            if (err)  { console.error('OAuth error:', err); return res.redirect('/forbidden'); }
+            if (!user){ console.warn('OAuth no user:', info); return res.redirect('/forbidden'); }
+            req.logIn(user, e => {
+                if (e) { console.error('OAuth login error:', e); return res.redirect('/forbidden'); }
+                if (user.email === ALLOWED_EMAIL) return res.redirect('/');
+                console.warn(`OAuth: email no autorizado: ${user.email}`);
+                res.redirect('/forbidden');
+            });
+        })(req, res, next);
     }
 );
 
@@ -158,10 +165,10 @@ function broadcast(event, data) {
 
 // ── Plugin download (public) ──────────────────────────────────────────────────
 
-const PLUGIN_ZIP = path.join(__dirname, 'public', 'controlex-1.3.0.zip');
+const PLUGIN_ZIP = path.join(__dirname, 'public', 'controlex-1.4.1.zip');
 
 app.get('/plugin', (req, res) => {
-    res.download(PLUGIN_ZIP, 'controlex-1.3.0.zip', err => {
+    res.download(PLUGIN_ZIP, 'controlex-1.4.1.zip', err => {
         if (err) res.status(404).send('Plugin no disponible');
     });
 });
@@ -177,6 +184,19 @@ function requireClientAuth(req, res, next) {
 }
 
 // ── Client API (public, Bearer auth) ──────────────────────────────────────────
+
+// Client: graceful disconnect notification (called from plugin dispose)
+app.post('/api/disconnect', requireClientAuth, (req, res) => {
+    const { clientId } = req.body || {};
+    const c = clients.get(String(clientId || ''));
+    if (c) {
+        // Force "long ago" lastSeen so it's instantly past the offline threshold
+        c.lastSeen = new Date(Date.now() - (c.transmitFreqSeconds * 1000 + 10_000) - 1000);
+        onlineState.set(c.clientId, false);
+        broadcast('offline', clientView(c));
+    }
+    res.json({ ok: true });
+});
 
 app.post('/api/screenshot', requireClientAuth, (req, res) => {
     const {

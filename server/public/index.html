@@ -542,6 +542,9 @@ function renderGrid() {
         return;
     }
 
+    // Clear any empty-state placeholder before rendering cards
+    gc.querySelectorAll('.empty-state').forEach(el => el.remove());
+
     // Reuse existing cards to avoid full DOM rebuild (reduces flicker)
     const existing = new Map([...gc.querySelectorAll('.client-card')].map(el => [el.dataset.id, el]));
     const seen = new Set();
@@ -635,6 +638,9 @@ function renderMosaic() {
         mc.style.setProperty('--mosaic-cols', 1);
         return;
     }
+
+    // Clear any empty-state placeholder before rendering cells
+    mc.querySelectorAll('.empty-state').forEach(el => el.remove());
 
     const cols = mosaicCols === 'auto' ? calcAutoCols() : mosaicCols;
     mc.style.setProperty('--mosaic-cols', cols);
