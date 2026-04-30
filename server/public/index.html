@@ -534,10 +534,10 @@ function setView(v) {
     currentView = v;
     document.getElementById('btn-grid').classList.toggle('active', v === 'grid');
     document.getElementById('btn-mosaic').classList.toggle('active', v === 'mosaic');
-    document.getElementById('grid-ctrl').style.display    = v === 'grid'   ? '' : 'none';
-    document.getElementById('mosaic-ctrl').style.display  = v === 'mosaic' ? '' : 'none';
-    document.getElementById('grid-wrap').style.display    = v === 'grid'   ? '' : 'none';
-    document.getElementById('mosaic-wrap').style.display  = v === 'mosaic' ? '' : 'none';
+    document.getElementById('grid-ctrl').style.display    = v === 'grid'   ? 'flex'  : 'none';
+    document.getElementById('mosaic-ctrl').style.display  = v === 'mosaic' ? 'flex'  : 'none';
+    document.getElementById('grid-wrap').style.display    = v === 'grid'   ? 'block' : 'none';
+    document.getElementById('mosaic-wrap').style.display  = v === 'mosaic' ? 'block' : 'none';
     render();
 }
 
