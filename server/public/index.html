@@ -340,6 +340,7 @@ body {
   <button class="tb-btn" onclick="openMsg('*','todos los clientes')">📢 Mensaje a todos</button>
   <button class="tb-btn" onclick="openCfg('*','todos los clientes')">⚙ Config global</button>
   <button class="tb-btn" onclick="pruneOffline()" title="Eliminar clientes offline">🧹 Limpiar offline</button>
+  <button class="tb-btn" onclick="wipeAll()" title="Eliminar TODOS los clientes">🗑️ Vaciar todos</button>
 
   <div class="tb-sep"></div>
 
@@ -560,6 +561,12 @@ function calcAutoCols() {
     if (n <= 4) return 2;
     if (n <= 9) return 3;
     return 4;
+}
+
+async function wipeAll() {
+    if (!confirm('¿Eliminar TODOS los clientes del panel (online y offline)?\n\nLos clientes que sigan activos volverán a aparecer en su próxima transmisión.')) return;
+    try { await fetch('/api/dashboard/wipe-all', { method: 'POST' }); }
+    catch (e) { console.error(e); }
 }
 
 async function pruneOffline() {

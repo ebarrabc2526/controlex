@@ -304,6 +304,18 @@ app.post('/api/dashboard/message', requireApiAuth, (req, res) => {
     res.json({ ok: true, count: targets.length });
 });
 
+// Wipe ALL clients (online and offline). Useful when the in-memory list
+// has stale entries after restarts or testing.
+app.post('/api/dashboard/wipe-all', requireApiAuth, (req, res) => {
+    const ids = Array.from(clients.keys());
+    for (const id of ids) {
+        clients.delete(id);
+        onlineState.delete(id);
+        broadcast('remove', { clientId: id });
+    }
+    res.json({ ok: true, removed: ids.length });
+});
+
 // Prune all currently-offline clients (manual cleanup button on dashboard)
 app.post('/api/dashboard/prune-offline', requireApiAuth, (req, res) => {
     let removed = 0;
