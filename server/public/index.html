@@ -455,6 +455,8 @@ function connectStream() {
         else { clients.push(c); clients.sort((a, b) => a.seqNum - b.seqNum); }
         updateCount();
         render();
+        // New screenshot arrived → refresh image immediately (without flicker)
+        refreshClientImage(c.clientId);
     });
 
     const flagOffline = e => {
@@ -481,29 +483,48 @@ function connectStream() {
     };
 }
 
+// Preload an image off-screen, swap visible img.src only when fully loaded.
+// This avoids the blank/flash that happens if you assign img.src directly.
+function preloadAndSwap(img, url) {
+    if (!img) return;
+    const pre = new Image();
+    pre.onload  = () => { img.src = url; };
+    pre.onerror = () => {};  // keep old image on failure
+    pre.src = url;
+}
+
+// Refresh the screenshot of one specific client everywhere it's shown
+// (grid card, mosaic cell, and fullscreen modal if open with that client).
+function refreshClientImage(clientId) {
+    const url = imgUrl(clientId);
+    const sel = CSS.escape(clientId);
+    document.querySelectorAll(
+        `.client-card[data-id="${sel}"] img, .mosaic-cell[data-id="${sel}"] img`
+    ).forEach(img => preloadAndSwap(img, url));
+
+    const fullModal = document.getElementById('modal-full');
+    const fullImg   = document.getElementById('full-img');
+    if (fullModal && fullModal.style.display !== 'none'
+        && fullImg && fullImg.dataset.id === clientId) {
+        preloadAndSwap(fullImg, url);
+    }
+}
+
 // Thumbnails refresh on a timer (the stream handles state, not images)
 // Uses preload trick: load new image off-screen, swap src only when ready → no flicker
 function setImgRefresh(ms) {
     clearInterval(imgRefreshTimer);
     if (ms > 0) imgRefreshTimer = setInterval(() => {
-        document.querySelectorAll('.client-card img, .mosaic-cell img').forEach(img => {
-            const el = img.closest('[data-id]');
-            if (!el) return;
-            const url = imgUrl(el.dataset.id);
-            const pre = new Image();
-            pre.onload  = () => { img.src = url; };
-            pre.onerror = () => { /* keep old image on failure */ };
-            pre.src = url;
+        const seen = new Set();
+        document.querySelectorAll('.client-card[data-id], .mosaic-cell[data-id]').forEach(el => {
+            const id = el.dataset.id;
+            if (id && !seen.has(id)) { seen.add(id); refreshClientImage(id); }
         });
-        // Also refresh the fullscreen image if the modal is open
+        const fullImg = document.getElementById('full-img');
         const fullModal = document.getElementById('modal-full');
-        const fullImg   = document.getElementById('full-img');
-        if (fullModal && fullModal.style.display !== 'none' && fullImg && fullImg.dataset.id) {
-            const url = imgUrl(fullImg.dataset.id);
-            const pre = new Image();
-            pre.onload  = () => { fullImg.src = url; };
-            pre.onerror = () => {};
-            pre.src = url;
+        if (fullModal && fullModal.style.display !== 'none' && fullImg && fullImg.dataset.id
+            && !seen.has(fullImg.dataset.id)) {
+            refreshClientImage(fullImg.dataset.id);
         }
     }, ms);
 }
