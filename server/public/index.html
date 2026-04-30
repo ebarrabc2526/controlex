@@ -339,6 +339,7 @@ body {
 
   <button class="tb-btn" onclick="openMsg('*','todos los clientes')">📢 Mensaje a todos</button>
   <button class="tb-btn" onclick="openCfg('*','todos los clientes')">⚙ Config global</button>
+  <button class="tb-btn" onclick="pruneOffline()" title="Eliminar clientes offline">🧹 Limpiar offline</button>
 
   <div class="tb-sep"></div>
 
@@ -466,6 +467,14 @@ function connectStream() {
     eventSource.addEventListener('online',  flagOffline);
     eventSource.addEventListener('offline', flagOffline);
 
+    eventSource.addEventListener('remove', e => {
+        const { clientId } = JSON.parse(e.data);
+        clients = clients.filter(x => x.clientId !== clientId);
+        selectedMosaic.delete(clientId);
+        updateCount();
+        render();
+    });
+
     eventSource.onerror = () => {
         // Auto-reconnect after 2s if stream drops
         setTimeout(() => { if (eventSource.readyState === EventSource.CLOSED) connectStream(); }, 2000);
@@ -520,6 +529,16 @@ function calcAutoCols() {
     if (n <= 4) return 2;
     if (n <= 9) return 3;
     return 4;
+}
+
+async function pruneOffline() {
+    if (!confirm('¿Eliminar todos los clientes offline del panel?')) return;
+    try {
+        const res = await fetch('/api/dashboard/prune-offline', { method: 'POST' });
+        const d = await res.json();
+        // The 'remove' SSE events will update the UI automatically
+        if (d.removed === 0) alert('No hay clientes offline.');
+    } catch (e) { console.error(e); }
 }
 
 // ── Counter ───────────────────────────────────────────────────────────────────

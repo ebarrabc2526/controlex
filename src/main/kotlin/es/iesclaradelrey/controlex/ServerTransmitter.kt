@@ -176,11 +176,28 @@ class ServerTransmitter(private val project: Project) : Disposable {
     }
 
     private fun loadOrCreateClientId(): String {
-        val basePath = project.basePath ?: return UUID.randomUUID().toString()
-        val dir = File(basePath, ControlexConfig.DIR_NAME).also { it.mkdirs() }
+        // Per-machine ID (NOT per-project) so that opening different projects
+        // does not register the same student as multiple clients.
+        val home = System.getProperty("user.home") ?: return UUID.randomUUID().toString()
+        val dir = File(home, ".${ControlexConfig.DIR_NAME}").also { it.mkdirs() }
         val f = File(dir, ControlexConfig.CLIENT_ID_FILE_NAME)
-        return if (f.exists()) f.readText().trim()
-        else UUID.randomUUID().toString().also { f.writeText(it) }
+        if (f.exists()) {
+            val v = f.readText().trim()
+            if (v.isNotEmpty()) return v
+        }
+        // Migration: if a project-scoped id already exists from older versions, reuse it
+        val basePath = project.basePath
+        if (basePath != null) {
+            val legacy = File(File(basePath, ControlexConfig.DIR_NAME), ControlexConfig.CLIENT_ID_FILE_NAME)
+            if (legacy.exists()) {
+                val v = legacy.readText().trim()
+                if (v.isNotEmpty()) {
+                    f.writeText(v)
+                    return v
+                }
+            }
+        }
+        return UUID.randomUUID().toString().also { f.writeText(it) }
     }
 
     private fun localIp(): String = try {

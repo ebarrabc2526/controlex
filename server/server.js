@@ -170,10 +170,10 @@ function broadcast(event, data) {
 
 // ── Plugin download (public) ──────────────────────────────────────────────────
 
-const PLUGIN_ZIP = path.join(__dirname, 'public', 'controlex-1.4.1.zip');
+const PLUGIN_ZIP = path.join(__dirname, 'public', 'controlex-1.4.2.zip');
 
 app.get('/plugin', (req, res) => {
-    res.download(PLUGIN_ZIP, 'controlex-1.4.1.zip', err => {
+    res.download(PLUGIN_ZIP, 'controlex-1.4.2.zip', err => {
         if (err) res.status(404).send('Plugin no disponible');
     });
 });
@@ -304,6 +304,22 @@ app.post('/api/dashboard/message', requireApiAuth, (req, res) => {
     res.json({ ok: true, count: targets.length });
 });
 
+// Prune all currently-offline clients (manual cleanup button on dashboard)
+app.post('/api/dashboard/prune-offline', requireApiAuth, (req, res) => {
+    let removed = 0;
+    for (const c of Array.from(clients.values())) {
+        const ageMs = Date.now() - new Date(c.lastSeen).getTime();
+        const thresholdMs = c.transmitFreqSeconds * 1000 + 10_000;
+        if (ageMs >= thresholdMs) {
+            clients.delete(c.clientId);
+            onlineState.delete(c.clientId);
+            broadcast('remove', { clientId: c.clientId });
+            removed++;
+        }
+    }
+    res.json({ ok: true, removed });
+});
+
 app.post('/api/dashboard/config', requireApiAuth, (req, res) => {
     const { clientId, captureFreqMin, captureFreqMax, transmitFreqSeconds } = req.body;
     const targets = clientId === '*' ? Array.from(clients.keys()) : [clientId].filter(id => clients.has(id));
@@ -319,9 +335,10 @@ app.post('/api/dashboard/config', requireApiAuth, (req, res) => {
     res.json({ ok: true, count: targets.length });
 });
 
-// ── Offline detector ──────────────────────────────────────────────────────────
+// ── Offline detector + auto-cleanup ───────────────────────────────────────────
 
 const onlineState = new Map();
+const PRUNE_AFTER_OFFLINE_MS = 5 * 60_000;  // 5 minutes offline → remove from list
 
 setInterval(() => {
     for (const c of clients.values()) {
@@ -332,6 +349,12 @@ setInterval(() => {
         if (prev !== isOnline) {
             onlineState.set(c.clientId, isOnline);
             if (prev !== undefined) broadcast(isOnline ? 'online' : 'offline', clientView(c));
+        }
+        // Prune long-offline clients (likely duplicates / stale entries)
+        if (!isOnline && ageMs > PRUNE_AFTER_OFFLINE_MS) {
+            clients.delete(c.clientId);
+            onlineState.delete(c.clientId);
+            broadcast('remove', { clientId: c.clientId });
         }
     }
 }, 1000);
