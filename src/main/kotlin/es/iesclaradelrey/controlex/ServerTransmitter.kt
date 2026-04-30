@@ -200,16 +200,40 @@ class ServerTransmitter(private val project: Project) : Disposable {
         return UUID.randomUUID().toString().also { f.writeText(it) }
     }
 
-    private fun localIp(): String = try {
-        NetworkInterface.getNetworkInterfaces()
-            ?.asSequence()
-            ?.filter { !it.isLoopback && it.isUp && !it.isVirtual }
-            ?.flatMap { nic -> nic.inetAddresses.asSequence() }
-            ?.filterIsInstance<java.net.Inet4Address>()
-            ?.firstOrNull()
-            ?.hostAddress
-            ?: InetAddress.getLocalHost().hostAddress
-    } catch (e: Exception) { "unknown" }
+    private fun localIp(): String {
+        // Best approach: ask the OS which interface it would use to reach the
+        // internet. No packet is actually sent (UDP connect() just sets up the
+        // route), but it returns the IP of the right adapter.
+        try {
+            java.net.DatagramSocket().use { sock ->
+                sock.connect(java.net.InetAddress.getByName("8.8.8.8"), 53)
+                val ip = sock.localAddress?.hostAddress
+                if (ip != null && !ip.startsWith("169.254.") && !ip.startsWith("0.")) return ip
+            }
+        } catch (_: Exception) { /* fall through */ }
+
+        // Fallback: scan interfaces, prefer LAN ranges, exclude APIPA/loopback.
+        return try {
+            val all = NetworkInterface.getNetworkInterfaces()
+                ?.asSequence()
+                ?.filter { !it.isLoopback && it.isUp }
+                ?.flatMap { nic -> nic.inetAddresses.asSequence() }
+                ?.filterIsInstance<java.net.Inet4Address>()
+                ?.map { it.hostAddress }
+                ?.filter { !it.startsWith("169.254.") && !it.startsWith("127.") }
+                ?.toList() ?: emptyList()
+
+            fun isPrivate(ip: String) =
+                ip.startsWith("10.") ||
+                ip.startsWith("192.168.") ||
+                Regex("""^172\.(1[6-9]|2\d|3[01])\.""").containsMatchIn(ip)
+
+            all.firstOrNull(::isPrivate)
+                ?: all.firstOrNull()
+                ?: InetAddress.getLocalHost().hostAddress
+                ?: "unknown"
+        } catch (e: Exception) { "unknown" }
+    }
 
     private fun gitUserName(): String = try {
         val f = File(System.getProperty("user.home"), ".gitconfig")
