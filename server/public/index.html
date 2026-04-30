@@ -495,6 +495,16 @@ function setImgRefresh(ms) {
             pre.onerror = () => { /* keep old image on failure */ };
             pre.src = url;
         });
+        // Also refresh the fullscreen image if the modal is open
+        const fullModal = document.getElementById('modal-full');
+        const fullImg   = document.getElementById('full-img');
+        if (fullModal && fullModal.style.display !== 'none' && fullImg && fullImg.dataset.id) {
+            const url = imgUrl(fullImg.dataset.id);
+            const pre = new Image();
+            pre.onload  = () => { fullImg.src = url; };
+            pre.onerror = () => {};
+            pre.src = url;
+        }
     }, ms);
 }
 
@@ -726,7 +736,9 @@ function toggleMosaic(clientId, checked) {
 function openFull(clientId) {
     const c = clients.find(x => x.clientId === clientId);
     if (!c) return;
-    document.getElementById('full-img').src = imgUrl(clientId);
+    const fullImg = document.getElementById('full-img');
+    fullImg.dataset.id = clientId;
+    fullImg.src = imgUrl(clientId);
     document.getElementById('full-info').textContent =
         `#${c.seqNum}  ·  ${c.ip}  ·  ${c.intellijUser} / ${c.osUser}  ·  ${c.projectName}`;
     document.getElementById('modal-full').style.display = 'flex';
@@ -734,7 +746,9 @@ function openFull(clientId) {
 
 function closeFull() {
     document.getElementById('modal-full').style.display = 'none';
-    document.getElementById('full-img').src = '';
+    const fullImg = document.getElementById('full-img');
+    fullImg.src = '';
+    delete fullImg.dataset.id;
 }
 
 // ── Message dialog ────────────────────────────────────────────────────────────
