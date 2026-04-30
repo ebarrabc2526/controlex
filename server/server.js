@@ -213,8 +213,27 @@ app.post('/api/screenshot', requireClientAuth, (req, res) => {
         return res.status(400).json({ error: 'Faltan campos requeridos: clientId, screenshot' });
     }
 
+    // Dedup: si ya hay otro clientId con el mismo (hostname,osUser),
+    // significa que es el mismo alumno con otro proyecto/instancia.
+    // Reciclamos su seqNum y eliminamos la entrada vieja.
+    const hn = String(hostname || 'unknown');
+    const ou = String(osUser   || 'unknown');
+    let inheritedSeq = null;
+    if (hn !== 'unknown' && ou !== 'unknown') {
+        for (const other of clients.values()) {
+            if (other.clientId !== clientId && other.hostname === hn && other.osUser === ou) {
+                inheritedSeq = other.seqNum;
+                clients.delete(other.clientId);
+                onlineState.delete(other.clientId);
+                broadcast('remove', { clientId: other.clientId });
+                break;
+            }
+        }
+    }
+
     const existing = clients.get(clientId);
-    const seqNum = existing ? existing.seqNum : ++seqCounter;
+    const seqNum = existing ? existing.seqNum
+                  : (inheritedSeq != null ? inheritedSeq : ++seqCounter);
 
     clients.set(clientId, {
         clientId,
@@ -341,6 +360,23 @@ const onlineState = new Map();
 const PRUNE_AFTER_OFFLINE_MS = 5 * 60_000;  // 5 minutes offline → remove from list
 
 setInterval(() => {
+    // 1) Dedup por (hostname,osUser): si hay varias entradas para la misma
+    //    máquina, conservamos la más reciente y eliminamos las demás.
+    const byMachine = new Map();
+    for (const c of clients.values()) {
+        if (c.hostname === 'unknown' || c.osUser === 'unknown') continue;
+        const key = `${c.hostname}::${c.osUser}`;
+        const prev = byMachine.get(key);
+        if (!prev) { byMachine.set(key, c); continue; }
+        const newer = new Date(c.lastSeen) > new Date(prev.lastSeen) ? c    : prev;
+        const older = newer === c                                   ? prev : c;
+        clients.delete(older.clientId);
+        onlineState.delete(older.clientId);
+        broadcast('remove', { clientId: older.clientId });
+        byMachine.set(key, newer);
+    }
+
+    // 2) Detección online/offline + prune de clientes muy antiguos
     for (const c of clients.values()) {
         const ageMs = Date.now() - new Date(c.lastSeen).getTime();
         const thresholdMs = c.transmitFreqSeconds * 1000 + 10_000;
@@ -350,7 +386,6 @@ setInterval(() => {
             onlineState.set(c.clientId, isOnline);
             if (prev !== undefined) broadcast(isOnline ? 'online' : 'offline', clientView(c));
         }
-        // Prune long-offline clients (likely duplicates / stale entries)
         if (!isOnline && ageMs > PRUNE_AFTER_OFFLINE_MS) {
             clients.delete(c.clientId);
             onlineState.delete(c.clientId);
