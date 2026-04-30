@@ -12,6 +12,7 @@ out/
 # Node
 server/node_modules/
 server/package-lock.json
+server/.env
 
 # OS
 .DS_Store
