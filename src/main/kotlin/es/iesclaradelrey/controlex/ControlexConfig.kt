@@ -14,6 +14,7 @@ object ControlexConfig {
     const val CAPTURAS_LOG_NAME: String = "capturas.log"
     const val PLUGINS_SNAPSHOT_NAME: String = ".plugins-snapshot"
     const val CLIENT_ID_FILE_NAME: String = "client-id.txt"
+    const val COMMANDS_LOG_NAME: String = "comandos.log"
 
     const val SELF_PLUGIN_ID: String = "es.iesclaradelrey.controlex"
 

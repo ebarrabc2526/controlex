@@ -133,6 +133,7 @@ app.get('/', requireDashboardAuth, (req, res) => {
 const clients = new Map();
 const pendingCommands = new Map();
 const sseClients = new Set();
+const clientStreams = new Map();  // clientId -> Set<res>
 let seqCounter = 0;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -170,10 +171,10 @@ function broadcast(event, data) {
 
 // ── Plugin download (public) ──────────────────────────────────────────────────
 
-const PLUGIN_ZIP = path.join(__dirname, 'public', 'controlex-1.4.3.zip');
+const PLUGIN_ZIP = path.join(__dirname, 'public', 'controlex-1.5.0.zip');
 
 app.get('/plugin', (req, res) => {
-    res.download(PLUGIN_ZIP, 'controlex-1.4.3.zip', err => {
+    res.download(PLUGIN_ZIP, 'controlex-1.5.0.zip', err => {
         if (err) res.status(404).send('Plugin no disponible');
     });
 });
@@ -239,6 +240,80 @@ app.post('/api/screenshot', requireClientAuth, (req, res) => {
     res.json({ commands });
 });
 
+// Client: SSE stream — server pushes commands in real time
+app.get('/api/client/stream', requireClientAuth, (req, res) => {
+    const clientId = String(req.query.clientId || '');
+    if (!clientId) return res.status(400).json({ error: 'clientId requerido' });
+
+    res.set({
+        'Content-Type':      'text/event-stream',
+        'Cache-Control':     'no-cache, no-transform',
+        'Connection':        'keep-alive',
+        'X-Accel-Buffering': 'no'
+    });
+    res.flushHeaders();
+    res.write(`event: hello\ndata: ${JSON.stringify({ clientId })}\n\n`);
+
+    if (!clientStreams.has(clientId)) clientStreams.set(clientId, new Set());
+    clientStreams.get(clientId).add(res);
+
+    // Drain any commands already queued via /api/screenshot polling path
+    const queued = (pendingCommands.get(clientId) || []).splice(0);
+    for (const cmd of queued) {
+        res.write(`event: command\ndata: ${JSON.stringify(cmd)}\n\n`);
+    }
+
+    const hb = setInterval(() => {
+        try { res.write(': heartbeat\n\n'); }
+        catch (_) {
+            clearInterval(hb);
+            clientStreams.get(clientId)?.delete(res);
+        }
+    }, 10_000);
+
+    const cleanup = () => {
+        clearInterval(hb);
+        const set = clientStreams.get(clientId);
+        if (set) { set.delete(res); if (set.size === 0) clientStreams.delete(clientId); }
+    };
+    req.on('close', cleanup);
+    req.on('error', cleanup);
+    res.on('error', cleanup);
+});
+
+function pushCommand(clientId, cmd) {
+    const set = clientStreams.get(clientId);
+    if (!set || set.size === 0) {
+        // Fallback: queue for next /api/screenshot poll
+        if (!pendingCommands.has(clientId)) pendingCommands.set(clientId, []);
+        pendingCommands.get(clientId).push(cmd);
+        return false;
+    }
+    const payload = `event: command\ndata: ${JSON.stringify(cmd)}\n\n`;
+    let delivered = 0;
+    for (const r of set) {
+        try { r.write(payload); delivered++; }
+        catch (_) { set.delete(r); }
+    }
+    return delivered > 0;
+}
+
+// Client: student requests help
+app.post('/api/help-request', requireClientAuth, (req, res) => {
+    const { clientId, text } = req.body || {};
+    if (!clientId) return res.status(400).json({ error: 'clientId requerido' });
+
+    const c = clients.get(String(clientId));
+    const view = c ? clientView(c) : { clientId };
+
+    broadcast('help-request', {
+        ...view,
+        text: String(text || '').slice(0, 1000),
+        at:   new Date().toISOString()
+    });
+    res.json({ ok: true });
+});
+
 // ── Dashboard API (require Google OAuth) ──────────────────────────────────────
 
 function requireApiAuth(req, res, next) {
@@ -302,6 +377,56 @@ app.post('/api/dashboard/message', requireApiAuth, (req, res) => {
         pendingCommands.get(id).push({ type: 'message', text: String(text).trim() });
     }
     res.json({ ok: true, count: targets.length });
+});
+
+// Allowlist of IntelliJ action IDs the dashboard is allowed to trigger
+const ALLOWED_ACTIONS = new Set([
+    'SaveAll', 'Synchronize', 'CompileDirty',
+    'Run', 'Stop', 'Debug', 'Rerun',
+    'EditorCopy', 'EditorPaste', 'EditorSelectAll',
+    'ToggleLineBreakpoint',
+    'Find', 'Replace',
+    'ReformatCode'
+]);
+
+app.post('/api/dashboard/command', requireApiAuth, (req, res) => {
+    const { clientId, type, payload } = req.body || {};
+    if (!clientId || !type) return res.status(400).json({ error: 'clientId y type son obligatorios' });
+
+    const cmd = { type };
+    switch (type) {
+        case 'show-dialog':
+            if (!payload?.text) return res.status(400).json({ error: 'payload.text obligatorio' });
+            cmd.text     = String(payload.text).slice(0, 4000);
+            cmd.imageUrl = payload.imageUrl ? String(payload.imageUrl).slice(0, 1000) : null;
+            cmd.title    = String(payload.title || 'Mensaje del profesor').slice(0, 200);
+            break;
+        case 'open-file':
+            if (!payload?.path) return res.status(400).json({ error: 'payload.path obligatorio' });
+            cmd.path = String(payload.path).slice(0, 500);
+            cmd.line = Number.isInteger(payload.line) ? payload.line : null;
+            break;
+        case 'goto-line':
+            if (!Number.isInteger(payload?.line)) return res.status(400).json({ error: 'payload.line obligatorio' });
+            cmd.line = payload.line;
+            cmd.path = payload.path ? String(payload.path).slice(0, 500) : null;
+            break;
+        case 'run-action':
+            if (!payload?.actionId || !ALLOWED_ACTIONS.has(payload.actionId)) {
+                return res.status(400).json({ error: 'actionId no permitido' });
+            }
+            cmd.actionId = payload.actionId;
+            break;
+        default:
+            return res.status(400).json({ error: `type no soportado: ${type}` });
+    }
+
+    const targets = clientId === '*' ? Array.from(clients.keys()) : [clientId];
+    let delivered = 0, queued = 0;
+    for (const id of targets) {
+        if (pushCommand(id, cmd)) delivered++; else queued++;
+    }
+    res.json({ ok: true, delivered, queued });
 });
 
 // Wipe ALL clients (online and offline). Useful when the in-memory list

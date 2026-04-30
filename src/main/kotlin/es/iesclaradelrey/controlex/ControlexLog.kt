@@ -27,6 +27,12 @@ object ControlexLog {
         write(project, ControlexConfig.CAPTURAS_LOG_NAME, message)
     }
 
+    @Synchronized
+    fun appendCommand(project: Project, type: String, raw: String) {
+        val sanitized = raw.take(500)
+        write(project, ControlexConfig.COMMANDS_LOG_NAME, "CMD type=$type payload=$sanitized")
+    }
+
     private fun write(project: Project, fileName: String, message: String) {
         val basePath = project.basePath ?: return
         val dir = File(basePath, ControlexConfig.DIR_NAME)

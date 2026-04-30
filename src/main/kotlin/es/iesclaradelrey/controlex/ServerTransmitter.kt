@@ -42,7 +42,7 @@ class ServerTransmitter(private val project: Project) : Disposable {
 
     @Volatile private var future: ScheduledFuture<*>? = null
     @Volatile private var stopped = false
-    private val clientId: String by lazy { loadOrCreateClientId() }
+    val clientId: String by lazy { loadOrCreateClientId() }
 
     fun start() {
         if (stopped || future != null) return

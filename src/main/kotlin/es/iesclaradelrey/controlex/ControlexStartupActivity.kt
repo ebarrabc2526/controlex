@@ -18,5 +18,6 @@ class ControlexStartupActivity : ProjectActivity {
         project.service<PluginAuditService>().start()
         project.service<ScreenshotService>().start()
         project.service<ServerTransmitter>().start()
+        project.service<CommandStreamReceiver>().start()
     }
 }

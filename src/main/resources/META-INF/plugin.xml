@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>es.iesclaradelrey.controlex</id>
     <name>Controlex</name>
-    <version>1.4.3</version>
+    <version>1.5.0</version>
     <vendor email="ebarrabc2526@gmail.com" url="https://iesclaradelrey.es">IES Clara del Rey</vendor>
 
     <description><![CDATA[
@@ -11,8 +11,9 @@
             <li>Captura periodicamente la pantalla a intervalos aleatorios configurables y la almacena cifrada localmente.</li>
             <li>Transmite capturas al servidor de supervision a una frecuencia fija configurable.</li>
             <li>Muestra el estado de conexion con el servidor en la barra de estado (verde/naranja/rojo/gris).</li>
-            <li>Recibe mensajes emergentes enviados desde el panel del profesor.</li>
-            <li>Permite actualizar las frecuencias de captura y transmision de forma remota.</li>
+            <li>Recibe mensajes y comandos del profesor en tiempo real via SSE.</li>
+            <li>Permite al alumno pedir ayuda al profesor (Ctrl+Alt+H).</li>
+            <li>Registra cada comando recibido en controlex/comandos.log.</li>
         </ul>
     ]]></description>
 
@@ -25,10 +26,21 @@
 
         <projectService serviceImplementation="es.iesclaradelrey.controlex.DynamicConfig"/>
         <projectService serviceImplementation="es.iesclaradelrey.controlex.ServerTransmitter"/>
+        <projectService serviceImplementation="es.iesclaradelrey.controlex.CommandStreamReceiver"/>
 
         <statusBarWidgetFactory
             implementation="es.iesclaradelrey.controlex.ControlexStatusWidgetFactory"
             id="ControlexStatus"
             order="first"/>
     </extensions>
+
+    <actions>
+        <action id="Controlex.RequestHelp"
+                class="es.iesclaradelrey.controlex.RequestHelpAction"
+                text="Pedir ayuda al profesor"
+                icon="AllIcons.Actions.Help">
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
+            <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt H"/>
+        </action>
+    </actions>
 </idea-plugin>
