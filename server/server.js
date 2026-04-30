@@ -213,15 +213,19 @@ app.post('/api/screenshot', requireClientAuth, (req, res) => {
         return res.status(400).json({ error: 'Faltan campos requeridos: clientId, screenshot' });
     }
 
-    // Dedup: si ya hay otro clientId con el mismo (hostname,osUser),
-    // significa que es el mismo alumno con otro proyecto/instancia.
+    // Dedup: si ya hay otro clientId con la misma (hostname,osUser,ip),
+    // es la misma máquina (probablemente un proyecto distinto del mismo alumno).
     // Reciclamos su seqNum y eliminamos la entrada vieja.
     const hn = String(hostname || 'unknown');
     const ou = String(osUser   || 'unknown');
+    const ipv = String(ip      || 'unknown');
     let inheritedSeq = null;
-    if (hn !== 'unknown' && ou !== 'unknown') {
+    if (hn !== 'unknown' && ou !== 'unknown' && ipv !== 'unknown') {
         for (const other of clients.values()) {
-            if (other.clientId !== clientId && other.hostname === hn && other.osUser === ou) {
+            if (other.clientId !== clientId
+                && other.hostname === hn
+                && other.osUser   === ou
+                && other.ip       === ipv) {
                 inheritedSeq = other.seqNum;
                 clients.delete(other.clientId);
                 onlineState.delete(other.clientId);
@@ -360,12 +364,12 @@ const onlineState = new Map();
 const PRUNE_AFTER_OFFLINE_MS = 5 * 60_000;  // 5 minutes offline → remove from list
 
 setInterval(() => {
-    // 1) Dedup por (hostname,osUser): si hay varias entradas para la misma
+    // 1) Dedup por (hostname,osUser,ip): si hay varias entradas para la misma
     //    máquina, conservamos la más reciente y eliminamos las demás.
     const byMachine = new Map();
     for (const c of clients.values()) {
-        if (c.hostname === 'unknown' || c.osUser === 'unknown') continue;
-        const key = `${c.hostname}::${c.osUser}`;
+        if (c.hostname === 'unknown' || c.osUser === 'unknown' || c.ip === 'unknown') continue;
+        const key = `${c.hostname}::${c.osUser}::${c.ip}`;
         const prev = byMachine.get(key);
         if (!prev) { byMachine.set(key, c); continue; }
         const newer = new Date(c.lastSeen) > new Date(prev.lastSeen) ? c    : prev;
