@@ -197,10 +197,10 @@ function broadcast(event, data) {
 
 // ── Plugin download (public) ──────────────────────────────────────────────────
 
-const PLUGIN_ZIP = path.join(__dirname, 'public', 'controlex-1.7.0.zip');
+const PLUGIN_ZIP = path.join(__dirname, 'public', 'controlex-1.8.0.zip');
 
 app.get('/plugin', (req, res) => {
-    res.download(PLUGIN_ZIP, 'controlex-1.7.0.zip', err => {
+    res.download(PLUGIN_ZIP, 'controlex-1.8.0.zip', err => {
         if (err) res.status(404).send('Plugin no disponible');
     });
 });
@@ -491,6 +491,27 @@ app.post('/api/dashboard/command', requireApiAuth, (req, res) => {
             cmd.normY  = Math.max(0, Math.min(1, payload.normY));
             cmd.button = [1, 2, 3].includes(payload.button) ? payload.button : 1;
             break;
+        case 'lock-session':
+            cmd.message = payload?.message
+                ? String(payload.message).slice(0, 500)
+                : 'Espera instrucciones del profesor.';
+            break;
+        case 'unlock-session':
+            break;
+        case 'send-file':
+            if (!payload?.path || typeof payload.content === 'undefined')
+                return res.status(400).json({ error: 'payload.path y payload.content obligatorios' });
+            cmd.path    = String(payload.path).slice(0, 500);
+            // Base64-encode content so the plugin avoids JSON-unescaping issues
+            cmd.content = Buffer.from(String(payload.content).slice(0, 200_000), 'utf8').toString('base64');
+            break;
+        case 'open-url': {
+            const rawUrl = String(payload?.url || '');
+            if (!rawUrl.startsWith('https://') && !rawUrl.startsWith('http://'))
+                return res.status(400).json({ error: 'URL debe comenzar con https:// o http://' });
+            cmd.url = rawUrl.slice(0, 2000);
+            break;
+        }
         default:
             return res.status(400).json({ error: `type no soportado: ${type}` });
     }

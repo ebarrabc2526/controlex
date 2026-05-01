@@ -4,6 +4,7 @@ import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.actionSystem.DataContext
+import com.intellij.ide.BrowserUtil
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
@@ -22,6 +23,7 @@ import java.awt.datatransfer.StringSelection
 import java.awt.event.InputEvent
 import java.awt.event.KeyEvent
 import java.io.File
+import java.util.Base64
 
 object RemoteCommandHandlers {
 
@@ -107,6 +109,27 @@ object RemoteCommandHandlers {
                     val button = numField("button", verified)?.toInt() ?: 1
                     injectClick(normX, normY, button)
                 }
+                "lock-session" -> {
+                    val msg = strField("message", verified)
+                        ?: "Espera instrucciones del profesor."
+                    project.service<SessionLockManager>().lock(msg)
+                }
+                "unlock-session" -> {
+                    project.service<SessionLockManager>().unlock()
+                }
+                "send-file" -> {
+                    val rel     = strField("path",    verified) ?: return
+                    val b64     = strField("content", verified) ?: return
+                    val content = try { Base64.getDecoder().decode(b64) }
+                                  catch (_: Exception) { return }
+                    writeFile(project, rel, content)
+                }
+                "open-url" -> {
+                    val url = strField("url", verified) ?: return
+                    if (url.startsWith("https://") || url.startsWith("http://")) {
+                        BrowserUtil.browse(url)
+                    }
+                }
                 else -> log.warn("Controlex: tipo de comando desconocido: $type")
             }
         } catch (e: Exception) {
@@ -177,6 +200,21 @@ object RemoteCommandHandlers {
             return FileEditorManager.getInstance(project).openTextEditor(desc, true)
         }
         return FileEditorManager.getInstance(project).selectedTextEditor
+    }
+
+    private fun writeFile(project: Project, relativePath: String, content: ByteArray) {
+        val base = project.basePath ?: return
+        val file = File(base, relativePath)
+        try {
+            file.parentFile?.mkdirs()
+            WriteCommandAction.runWriteCommandAction(project) {
+                file.writeBytes(content)
+                LocalFileSystem.getInstance().refreshAndFindFileByIoFile(file)
+            }
+            log.info("Controlex: fichero escrito: ${file.path} (${content.size} bytes)")
+        } catch (e: Exception) {
+            log.warn("Controlex: error escribiendo fichero ${file.path}", e)
+        }
     }
 
     private fun injectText(text: String) {
