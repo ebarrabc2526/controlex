@@ -18,6 +18,10 @@ object ControlexConfig {
 
     const val SELF_PLUGIN_ID: String = "es.iesclaradelrey.controlex"
 
+    // Ed25519 public key (SPKI/DER, Base64) — matches server's COMMAND_PRIVATE_KEY
+    const val COMMAND_PUBLIC_KEY_B64: String =
+        "MCowBQYDK2VwAyEA7GVlzz4ZJ2yJc6Q9uWOlBKevDLBA1d3c0w4sKL+Addc="
+
     private const val RESOURCE_PATH: String = "/controlex.properties"
 
     private const val DEFAULT_PASSWORD: String = "ControlEx-IES-ClaraDelRey-2026"

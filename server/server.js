@@ -7,6 +7,7 @@ const session      = require('express-session');
 const passport     = require('passport');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const path         = require('path');
+const crypto       = require('crypto');
 
 const app = express();
 const PORT          = process.env.PORT || 3000;
@@ -15,6 +16,26 @@ const ALLOWED_EMAIL = process.env.ALLOWED_EMAIL      || 'ebarrabc2526@gmail.com'
 const CLIENT_ID     = process.env.GOOGLE_CLIENT_ID;
 const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 const SESSION_SECRET= process.env.SESSION_SECRET     || 'change-me';
+
+// Ed25519 signing key for command integrity
+const CMD_PRIVATE_KEY = (() => {
+    const b64 = process.env.COMMAND_PRIVATE_KEY;
+    if (!b64) return null;
+    try {
+        return crypto.createPrivateKey({ key: Buffer.from(b64, 'base64'), format: 'der', type: 'pkcs8' });
+    } catch (e) {
+        console.error('[controlex] COMMAND_PRIVATE_KEY inválida:', e.message);
+        return null;
+    }
+})();
+
+function signCmd(cmd) {
+    const payload = { ...cmd, ts: Date.now() };
+    if (!CMD_PRIVATE_KEY) return payload;
+    const json = JSON.stringify(payload);
+    const sigBuf = crypto.sign(null, Buffer.from(json, 'utf8'), CMD_PRIVATE_KEY);
+    return { ...payload, sig: sigBuf.toString('base64') };
+}
 
 // ── Auth setup ────────────────────────────────────────────────────────────────
 
@@ -171,10 +192,10 @@ function broadcast(event, data) {
 
 // ── Plugin download (public) ──────────────────────────────────────────────────
 
-const PLUGIN_ZIP = path.join(__dirname, 'public', 'controlex-1.5.0.zip');
+const PLUGIN_ZIP = path.join(__dirname, 'public', 'controlex-1.6.0.zip');
 
 app.get('/plugin', (req, res) => {
-    res.download(PLUGIN_ZIP, 'controlex-1.5.0.zip', err => {
+    res.download(PLUGIN_ZIP, 'controlex-1.6.0.zip', err => {
         if (err) res.status(404).send('Plugin no disponible');
     });
 });
@@ -282,14 +303,15 @@ app.get('/api/client/stream', requireClientAuth, (req, res) => {
 });
 
 function pushCommand(clientId, cmd) {
+    const signed = signCmd(cmd);
     const set = clientStreams.get(clientId);
     if (!set || set.size === 0) {
         // Fallback: queue for next /api/screenshot poll
         if (!pendingCommands.has(clientId)) pendingCommands.set(clientId, []);
-        pendingCommands.get(clientId).push(cmd);
+        pendingCommands.get(clientId).push(signed);
         return false;
     }
-    const payload = `event: command\ndata: ${JSON.stringify(cmd)}\n\n`;
+    const payload = `event: command\ndata: ${JSON.stringify(signed)}\n\n`;
     let delivered = 0;
     for (const r of set) {
         try { r.write(payload); delivered++; }
@@ -416,6 +438,28 @@ app.post('/api/dashboard/command', requireApiAuth, (req, res) => {
                 return res.status(400).json({ error: 'actionId no permitido' });
             }
             cmd.actionId = payload.actionId;
+            break;
+        case 'insert-text':
+            if (!payload?.text) return res.status(400).json({ error: 'payload.text obligatorio' });
+            cmd.text = String(payload.text).slice(0, 10000);
+            cmd.path = payload.path ? String(payload.path).slice(0, 500) : null;
+            cmd.line = Number.isInteger(payload.line) ? payload.line : null;
+            break;
+        case 'highlight-line':
+            if (!Number.isInteger(payload?.line)) return res.status(400).json({ error: 'payload.line obligatorio' });
+            cmd.line    = payload.line;
+            cmd.path    = payload.path    ? String(payload.path).slice(0, 500)    : null;
+            cmd.color   = ['yellow','red','green','blue'].includes(payload.color)  ? payload.color : 'yellow';
+            cmd.tooltip = payload.tooltip ? String(payload.tooltip).slice(0, 500) : null;
+            break;
+        case 'clear-highlights':
+            break;
+        case 'show-inlay':
+            if (!payload?.text || !Number.isInteger(payload?.line))
+                return res.status(400).json({ error: 'payload.text y payload.line obligatorios' });
+            cmd.text = String(payload.text).slice(0, 500);
+            cmd.line = payload.line;
+            cmd.path = payload.path ? String(payload.path).slice(0, 500) : null;
             break;
         default:
             return res.status(400).json({ error: `type no soportado: ${type}` });

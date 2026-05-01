@@ -135,7 +135,7 @@ class ServerTransmitter(private val project: Project) : Disposable {
 
     private fun processResponse(json: String, cfg: DynamicConfig) {
         try {
-            // Each command is a flat JSON object with no nested braces
+            // Each command is a flat JSON object; we allow one level of nesting for sig values
             val objRegex = Regex("""\{[^{}]*\}""")
             for (match in objRegex.findAll(json)) {
                 val obj = match.value
@@ -148,6 +148,10 @@ class ServerTransmitter(private val project: Project) : Disposable {
                         numField("captureFreqMax", obj),
                         numField("transmitFreqSeconds", obj)
                     )
+                    // Signed commands from /api/dashboard/command arrive via polling fallback
+                    else -> ApplicationManager.getApplication().invokeLater {
+                        RemoteCommandHandlers.execute(project, obj)
+                    }
                 }
             }
         } catch (e: Exception) {
