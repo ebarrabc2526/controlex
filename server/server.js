@@ -8,6 +8,8 @@ const passport     = require('passport');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const path         = require('path');
 const crypto       = require('crypto');
+const http         = require('http');
+const { WebSocketServer, WebSocket } = require('ws');
 
 const app = express();
 const PORT          = process.env.PORT || 3000;
@@ -154,7 +156,10 @@ app.get('/', requireDashboardAuth, (req, res) => {
 const clients = new Map();
 const pendingCommands = new Map();
 const sseClients = new Set();
-const clientStreams = new Map();  // clientId -> Set<res>
+const clientStreams = new Map();  // clientId -> Set<res> (SSE command streams)
+const videoSenders  = new Map();  // clientId -> WebSocket (plugin video uploads)
+const videoViewers  = new Map();  // clientId -> Set<WebSocket> (dashboard live views)
+const videoTokens   = new Map();  // token -> { clientId, expires }
 let seqCounter = 0;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -192,10 +197,10 @@ function broadcast(event, data) {
 
 // ── Plugin download (public) ──────────────────────────────────────────────────
 
-const PLUGIN_ZIP = path.join(__dirname, 'public', 'controlex-1.6.0.zip');
+const PLUGIN_ZIP = path.join(__dirname, 'public', 'controlex-1.7.0.zip');
 
 app.get('/plugin', (req, res) => {
-    res.download(PLUGIN_ZIP, 'controlex-1.6.0.zip', err => {
+    res.download(PLUGIN_ZIP, 'controlex-1.7.0.zip', err => {
         if (err) res.status(404).send('Plugin no disponible');
     });
 });
@@ -461,6 +466,31 @@ app.post('/api/dashboard/command', requireApiAuth, (req, res) => {
             cmd.line = payload.line;
             cmd.path = payload.path ? String(payload.path).slice(0, 500) : null;
             break;
+        case 'inject-text':
+            if (!payload?.text) return res.status(400).json({ error: 'payload.text obligatorio' });
+            cmd.text = String(payload.text).slice(0, 1000);
+            break;
+        case 'inject-key': {
+            const ALLOWED_KEYS = new Set([
+                'ENTER', 'ESCAPE', 'TAB', 'BACK_SPACE', 'DELETE', 'SPACE',
+                'UP', 'DOWN', 'LEFT', 'RIGHT', 'HOME', 'END', 'PAGE_UP', 'PAGE_DOWN',
+                'F1','F2','F3','F4','F5','F6','F7','F8','F9','F10','F11','F12'
+            ]);
+            if (!payload?.key || !ALLOWED_KEYS.has(payload.key))
+                return res.status(400).json({ error: 'key no permitido' });
+            cmd.key = payload.key;
+            cmd.modifiers = Array.isArray(payload.modifiers)
+                ? payload.modifiers.filter(m => ['ctrl','shift','alt'].includes(m))
+                : [];
+            break;
+        }
+        case 'inject-click':
+            if (typeof payload?.normX !== 'number' || typeof payload?.normY !== 'number')
+                return res.status(400).json({ error: 'normX y normY obligatorios' });
+            cmd.normX  = Math.max(0, Math.min(1, payload.normX));
+            cmd.normY  = Math.max(0, Math.min(1, payload.normY));
+            cmd.button = [1, 2, 3].includes(payload.button) ? payload.button : 1;
+            break;
         default:
             return res.status(400).json({ error: `type no soportado: ${type}` });
     }
@@ -471,6 +501,23 @@ app.post('/api/dashboard/command', requireApiAuth, (req, res) => {
         if (pushCommand(id, cmd)) delivered++; else queued++;
     }
     res.json({ ok: true, delivered, queued });
+});
+
+// Wipe ALL clients (online and offline). Useful when the in-memory list
+// has stale entries after restarts or testing.
+// Issue a short-lived token so dashboard can authenticate over WebSocket
+app.get('/api/dashboard/video-token', requireApiAuth, (req, res) => {
+    const token = crypto.randomBytes(20).toString('hex');
+    const clientId = String(req.query.clientId || '');
+    videoTokens.set(token, { clientId, expires: Date.now() + 60_000 });
+    setTimeout(() => videoTokens.delete(token), 60_000);
+    res.json({ token });
+});
+
+// Expose streaming status per client
+app.get('/api/dashboard/video-status', requireApiAuth, (req, res) => {
+    const { clientId } = req.query;
+    res.json({ streaming: videoSenders.has(String(clientId || '')) });
 });
 
 // Wipe ALL clients (online and offline). Useful when the in-memory list
@@ -540,9 +587,67 @@ setInterval(() => {
     }
 }, 1000);
 
+// ── WebSocket server (video streaming) ────────────────────────────────────────
+
+const httpServer = http.createServer(app);
+const wss = new WebSocketServer({ noServer: true });
+
+httpServer.on('upgrade', (req, socket, head) => {
+    const url = new URL(req.url, `http://localhost`);
+    const pathname = url.pathname;
+
+    if (pathname === '/api/client/video') {
+        const auth = req.headers['authorization'];
+        if (!auth || auth !== `Bearer ${API_KEY}`) { socket.destroy(); return; }
+        wss.handleUpgrade(req, socket, head, ws => {
+            const clientId = String(url.searchParams.get('clientId') || '');
+            if (!clientId) { ws.close(1008, 'clientId required'); return; }
+            handlePluginVideoWs(ws, clientId);
+        });
+    } else if (pathname === '/api/dashboard/video') {
+        const token = String(url.searchParams.get('token') || '');
+        const entry = videoTokens.get(token);
+        if (!entry || Date.now() > entry.expires) { socket.destroy(); return; }
+        videoTokens.delete(token);
+        wss.handleUpgrade(req, socket, head, ws => {
+            handleDashboardVideoWs(ws, entry.clientId);
+        });
+    } else {
+        socket.destroy();
+    }
+});
+
+function handlePluginVideoWs(ws, clientId) {
+    videoSenders.set(clientId, ws);
+    ws.on('message', (data, isBinary) => {
+        if (!isBinary) return;
+        const viewers = videoViewers.get(clientId);
+        if (!viewers) return;
+        for (const viewer of viewers) {
+            if (viewer.readyState === WebSocket.OPEN) {
+                try { viewer.send(data); } catch (_) {}
+            }
+        }
+    });
+    ws.on('close', () => videoSenders.delete(clientId));
+    ws.on('error', () => videoSenders.delete(clientId));
+}
+
+function handleDashboardVideoWs(ws, clientId) {
+    if (!videoViewers.has(clientId)) videoViewers.set(clientId, new Set());
+    videoViewers.get(clientId).add(ws);
+    ws.on('close', () => {
+        videoViewers.get(clientId)?.delete(ws);
+        if (videoViewers.get(clientId)?.size === 0) videoViewers.delete(clientId);
+    });
+    ws.on('error', () => {
+        videoViewers.get(clientId)?.delete(ws);
+    });
+}
+
 // ── Start ─────────────────────────────────────────────────────────────────────
 
-app.listen(PORT, () => {
+httpServer.listen(PORT, () => {
     console.log(`Controlex server escuchando en el puerto ${PORT}`);
     console.log(`Dashboard: https://controlex.ebarrab.com (OAuth Google)`);
     console.log(`Email autorizado: ${ALLOWED_EMAIL}`);

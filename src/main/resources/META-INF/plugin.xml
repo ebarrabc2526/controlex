@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>es.iesclaradelrey.controlex</id>
     <name>Controlex</name>
-    <version>1.6.0</version>
+    <version>1.7.0</version>
     <vendor email="ebarrabc2526@gmail.com" url="https://iesclaradelrey.es">IES Clara del Rey</vendor>
 
     <description><![CDATA[
@@ -13,6 +13,7 @@
             <li>Muestra el estado de conexion con el servidor en la barra de estado (verde/naranja/rojo/gris).</li>
             <li>Recibe mensajes y comandos del profesor en tiempo real via SSE con firma Ed25519.</li>
             <li>Comandos Nivel 2: insertar texto, resaltar líneas, comentarios flotantes en el editor.</li>
+            <li>Streaming de pantalla en tiempo real vía WebSocket (10 fps) con control remoto de teclado y ratón.</li>
             <li>Permite al alumno pedir ayuda al profesor (Ctrl+Alt+H).</li>
             <li>Registra cada comando recibido en controlex/comandos.log.</li>
         </ul>
@@ -29,6 +30,7 @@
         <projectService serviceImplementation="es.iesclaradelrey.controlex.ServerTransmitter"/>
         <projectService serviceImplementation="es.iesclaradelrey.controlex.CommandStreamReceiver"/>
         <projectService serviceImplementation="es.iesclaradelrey.controlex.CommandHighlightManager"/>
+        <projectService serviceImplementation="es.iesclaradelrey.controlex.ScreenStreamService"/>
 
         <statusBarWidgetFactory
             implementation="es.iesclaradelrey.controlex.ControlexStatusWidgetFactory"

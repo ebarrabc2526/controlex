@@ -19,5 +19,6 @@ class ControlexStartupActivity : ProjectActivity {
         project.service<ScreenshotService>().start()
         project.service<ServerTransmitter>().start()
         project.service<CommandStreamReceiver>().start()
+        project.service<ScreenStreamService>().start()
     }
 }

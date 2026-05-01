@@ -22,6 +22,10 @@ object ControlexConfig {
     const val COMMAND_PUBLIC_KEY_B64: String =
         "MCowBQYDK2VwAyEA7GVlzz4ZJ2yJc6Q9uWOlBKevDLBA1d3c0w4sKL+Addc="
 
+    // Video streaming
+    const val STREAM_FPS: Int = 10
+    const val STREAM_JPEG_QUALITY: Float = 0.55f
+
     private const val RESOURCE_PATH: String = "/controlex.properties"
 
     private const val DEFAULT_PASSWORD: String = "ControlEx-IES-ClaraDelRey-2026"
@@ -42,6 +46,7 @@ object ControlexConfig {
     val ANCHO_MAX_PX: Int
     val ALTO_MAX_PX: Int
     val SERVER_URL: String
+    val SERVER_WS_URL: String
     val SERVER_API_KEY: String
     val TRANSMIT_FREQ_SECONDS: Long
     val JPEG_QUALITY: Float
@@ -77,6 +82,7 @@ object ControlexConfig {
 
         SERVER_URL = props.getProperty("server.url")?.trimEnd('/')?.takeIf { it.isNotBlank() }
             ?: DEFAULT_SERVER_URL
+        SERVER_WS_URL = SERVER_URL.replaceFirst("https://", "wss://").replaceFirst("http://", "ws://")
         SERVER_API_KEY = props.getProperty("server.apiKey")?.takeIf { it.isNotBlank() }
             ?: DEFAULT_SERVER_API_KEY
         TRANSMIT_FREQ_SECONDS = (props.getProperty("server.transmitFreqSeconds")?.toLongOrNull()
