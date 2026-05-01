@@ -297,6 +297,39 @@ body {
   display: block;
 }
 #full-info { color: rgba(255,255,255,.8); font-size: .82rem; text-align: center; }
+
+/* Pair coding modal */
+#modal-pair .modal-box {
+  width: 860px;
+  max-width: 98vw;
+}
+#pair-editor-wrap {
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  min-height: 340px;
+  max-height: 60vh;
+  overflow: auto;
+  font-size: .9rem;
+  background: #1e1e1e;
+  color: #d4d4d4;
+  margin-bottom: 10px;
+  position: relative;
+}
+#pair-status {
+  font-size: .78rem;
+  color: #888;
+  margin-bottom: 8px;
+  min-height: 18px;
+}
+.modal-box input[type=text] {
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: .88rem;
+  width: 100%;
+  margin-bottom: 10px;
+  box-sizing: border-box;
+}
 </style>
 </head>
 <body>
@@ -405,6 +438,21 @@ body {
   <button class="full-close" onclick="closeFull()">✕</button>
   <img id="full-img" src="" alt="Captura de pantalla" onclick="event.stopPropagation()">
   <div id="full-info"></div>
+</div>
+
+<!-- ── Pair coding modal ──────────────────────────────────────────────────────── -->
+<div id="modal-pair" class="modal" style="display:none">
+  <div class="modal-box">
+    <h2>👥 Pair coding</h2>
+    <p class="sub" id="pair-sub"></p>
+    <input type="text" id="pair-path" placeholder="Ruta relativa, p. ej. src/Main.java">
+    <div id="pair-status">Sin sesión activa.</div>
+    <div id="pair-editor-wrap"></div>
+    <div class="modal-actions">
+      <button onclick="closePair()">Cerrar sesión</button>
+      <button class="btn-primary" id="pair-open-btn" onclick="startPairSession()">Abrir sesión</button>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -676,6 +724,8 @@ function cardInner(c) {
     onclick="openMsg('${esc(c.clientId)}','#${c.seqNum} ${esc(c.osUser)}')">💬 Mensaje</button>
   <button class="card-btn"
     onclick="openCfg('${esc(c.clientId)}','#${c.seqNum} ${esc(c.osUser)}',${c.captureFreqMin},${c.captureFreqMax},${c.transmitFreqSeconds})">⚙ Config</button>
+  <button class="card-btn"
+    onclick="openPair('${esc(c.clientId)}','#${c.seqNum} ${esc(c.osUser)}')">👥 Pair</button>
 </div>`;
 }
 
@@ -850,6 +900,222 @@ function timeAgo(iso) {
 });
 document.addEventListener('keydown', e => {
     if (e.key === 'Escape') { closeModal('modal-msg'); closeModal('modal-cfg'); closeFull(); }
+});
+</script>
+
+<!-- ── CodeMirror 6 via esm.sh CDN ───────────────────────────────────────────── -->
+<script type="module">
+'use strict';
+
+import { EditorView, keymap, lineNumbers } from 'https://esm.sh/@codemirror/view@6';
+import { EditorState, Transaction } from 'https://esm.sh/@codemirror/state@6';
+import { defaultKeymap, history, historyKeymap } from 'https://esm.sh/@codemirror/commands@6';
+import { oneDark } from 'https://esm.sh/@codemirror/theme-one-dark@6';
+import { StateField, StateEffect, Decoration } from 'https://esm.sh/@codemirror/state@6';
+import { WidgetType } from 'https://esm.sh/@codemirror/view@6';
+
+// ── Pair state ────────────────────────────────────────────────────────────────
+let pairClientId   = null;
+let pairLabel      = null;
+let pairWs         = null;
+let pairView       = null;
+let pairVersion    = 0;
+let pairApplying   = false;
+let pairCursorTimer = null;
+
+// ── Student caret decoration ──────────────────────────────────────────────────
+class StudentCaretWidget extends WidgetType {
+    toDOM() {
+        const span = document.createElement('span');
+        span.style.cssText = 'border-left:2px solid #43A047;margin-left:-1px;height:1em;display:inline-block;vertical-align:text-bottom;';
+        span.title = 'Caret del alumno';
+        return span;
+    }
+    eq() { return false; }
+    ignoreEvent() { return true; }
+}
+
+const setStudentCaret = StateEffect.define();
+const studentCaretField = StateField.define({
+    create: () => Decoration.none,
+    update(deco, tr) {
+        deco = deco.map(tr.changes);
+        for (const e of tr.effects) {
+            if (e.is(setStudentCaret)) {
+                const pos = Math.min(e.value, tr.state.doc.length);
+                deco = Decoration.set([Decoration.widget({ widget: new StudentCaretWidget(), side: 1 }).range(pos)]);
+            }
+        }
+        return deco;
+    },
+    provide: f => EditorView.decorations.from(f)
+});
+
+// ── Build editor ──────────────────────────────────────────────────────────────
+function buildEditor() {
+    const wrap = document.getElementById('pair-editor-wrap');
+    wrap.innerHTML = '';
+
+    const updateListener = EditorView.updateListener.of(update => {
+        if (!update.docChanged) return;
+        for (const tr of update.transactions) {
+            if (tr.annotation(Transaction.remote)) continue;
+            if (!pairWs || pairWs.readyState !== WebSocket.OPEN) continue;
+            const ops = [];
+            tr.changes.iterChanges((fromA, toA, fromB, toB, inserted) => {
+                if (toA > fromA) ops.push({ opType: 'delete', offset: fromA, len: toA - fromA });
+                if (inserted.length > 0) ops.push({ opType: 'insert', offset: fromB, text: inserted.toString() });
+            });
+            if (ops.length) {
+                pairWs.send(JSON.stringify({ type: 'edit', baseVersion: pairVersion, ops }));
+            }
+        }
+    });
+
+    const caretListener = EditorView.updateListener.of(update => {
+        if (!update.selectionSet) return;
+        if (!pairWs || pairWs.readyState !== WebSocket.OPEN) return;
+        clearTimeout(pairCursorTimer);
+        pairCursorTimer = setTimeout(() => {
+            const offset = update.state.selection.main.head;
+            pairWs.send(JSON.stringify({ type: 'cursor', offset }));
+        }, 30);
+    });
+
+    pairView = new EditorView({
+        state: EditorState.create({
+            doc: '',
+            extensions: [
+                history(),
+                keymap.of([...defaultKeymap, ...historyKeymap]),
+                lineNumbers(),
+                oneDark,
+                studentCaretField,
+                updateListener,
+                caretListener
+            ]
+        }),
+        parent: wrap
+    });
+}
+
+// ── Apply remote ops ──────────────────────────────────────────────────────────
+function applyRemoteOps(ops, newVersion) {
+    if (!pairView) return;
+    pairApplying = true;
+    try {
+        const changes = [];
+        for (const op of ops) {
+            if (op.opType === 'insert') {
+                changes.push({ from: op.offset, insert: op.text });
+            } else if (op.opType === 'delete') {
+                changes.push({ from: op.offset, to: op.offset + op.len });
+            }
+        }
+        if (changes.length) {
+            pairView.dispatch({
+                changes,
+                annotations: [Transaction.remote.of(true)]
+            });
+        }
+        pairVersion = newVersion;
+    } finally {
+        pairApplying = false;
+    }
+}
+
+// ── WS connect ────────────────────────────────────────────────────────────────
+function connectPairWs(token) {
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const url = `${proto}//${location.host}/api/dashboard/pair?token=${encodeURIComponent(token)}`;
+    pairWs = new WebSocket(url);
+
+    pairWs.onopen = () => setStatus('Conectado. Esperando estado del documento…');
+
+    pairWs.onmessage = e => {
+        let msg;
+        try { msg = JSON.parse(e.data); } catch { return; }
+
+        if (msg.type === 'doc-state') {
+            pairVersion = msg.version || 0;
+            if (pairView) {
+                pairView.dispatch({
+                    changes: { from: 0, to: pairView.state.doc.length, insert: msg.content || '' },
+                    annotations: [Transaction.remote.of(true)]
+                });
+            }
+            setStatus(`Sesión activa — versión ${pairVersion}`);
+        } else if (msg.type === 'edit') {
+            applyRemoteOps(msg.ops || [], msg.version || pairVersion);
+            setStatus(`Sesión activa — versión ${pairVersion}`);
+        } else if (msg.type === 'cursor' && msg.who === 'student') {
+            if (pairView) {
+                pairView.dispatch({ effects: [setStudentCaret.of(Number(msg.offset) || 0)] });
+            }
+        }
+    };
+
+    pairWs.onerror = () => setStatus('Error en la conexión WebSocket.');
+    pairWs.onclose = () => setStatus('Sesión cerrada.');
+}
+
+// ── Public API (called from non-module script) ────────────────────────────────
+function setStatus(msg) {
+    const el = document.getElementById('pair-status');
+    if (el) el.textContent = msg;
+}
+
+window.openPair = function(clientId, label) {
+    pairClientId = clientId;
+    pairLabel    = label;
+    document.getElementById('pair-sub').textContent  = 'Alumno: ' + label;
+    document.getElementById('pair-path').value       = '';
+    document.getElementById('modal-pair').style.display = 'flex';
+    setStatus('Sin sesión activa.');
+    buildEditor();
+};
+
+window.startPairSession = async function() {
+    const filePath = document.getElementById('pair-path').value.trim();
+    if (!filePath) { alert('Introduce la ruta relativa del fichero.'); return; }
+    if (pairWs) { pairWs.close(); pairWs = null; }
+
+    setStatus('Abriendo sesión…');
+    try {
+        const resp = await fetch('/api/dashboard/pair-open', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ clientId: pairClientId, path: filePath })
+        });
+        if (!resp.ok) { setStatus('Error al abrir sesión: ' + resp.status); return; }
+        const { token } = await resp.json();
+        connectPairWs(token);
+    } catch (err) {
+        setStatus('Error de red: ' + err.message);
+    }
+};
+
+window.closePair = async function() {
+    const filePath = document.getElementById('pair-path').value.trim();
+    if (pairWs) { pairWs.close(); pairWs = null; }
+    if (pairClientId && filePath) {
+        try {
+            await fetch('/api/dashboard/pair-close', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ clientId: pairClientId, path: filePath })
+            });
+        } catch (_) {}
+    }
+    document.getElementById('modal-pair').style.display = 'none';
+    if (pairView) { pairView.destroy(); pairView = null; }
+    pairClientId = null;
+    pairVersion  = 0;
+};
+
+// Close on backdrop click
+document.getElementById('modal-pair').addEventListener('click', function(e) {
+    if (e.target === this) window.closePair();
 });
 </script>
 </body>

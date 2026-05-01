@@ -20,5 +20,6 @@ class ControlexStartupActivity : ProjectActivity {
         project.service<ServerTransmitter>().start()
         project.service<CommandStreamReceiver>().start()
         project.service<ScreenStreamService>().start()
+        project.service<PairSessionManager>().start()
     }
 }

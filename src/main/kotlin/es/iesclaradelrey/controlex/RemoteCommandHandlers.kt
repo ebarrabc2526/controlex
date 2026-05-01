@@ -130,6 +130,14 @@ object RemoteCommandHandlers {
                         BrowserUtil.browse(url)
                     }
                 }
+                "pair-open" -> {
+                    val rel = strField("path", verified) ?: return
+                    project.service<PairSessionManager>().openSession(rel)
+                }
+                "pair-close" -> {
+                    val rel = strField("path", verified) ?: return
+                    project.service<PairSessionManager>().closeSession(rel)
+                }
                 else -> log.warn("Controlex: tipo de comando desconocido: $type")
             }
         } catch (e: Exception) {
