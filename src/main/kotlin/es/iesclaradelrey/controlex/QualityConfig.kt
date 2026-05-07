@@ -24,7 +24,7 @@ class QualityConfig(@Suppress("UNUSED_PARAMETER") project: Project) {
         File(home, ".${ControlexConfig.DIR_NAME}/quality.json")
     }
 
-    @Volatile var jpegQuality: Int = (ControlexConfig.JPEG_QUALITY * 100).toInt().coerceIn(1, 100)
+    @Volatile var jpegQuality: Int = 92    // higher than the static default (80) so capturas se vean nítidas por defecto
     @Volatile var streamFps:   Int = ControlexConfig.STREAM_FPS.coerceIn(1, 15)
     @Volatile var maxWidthPx:  Int = ControlexConfig.ANCHO_MAX_PX.coerceAtLeast(0)
 

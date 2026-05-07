@@ -272,11 +272,11 @@ function broadcast(event, data) {
 
 // ── Plugin download (public) ──────────────────────────────────────────────────
 
-const PLUGIN_ZIP = path.join(__dirname, 'public', 'controlex-2.3.5.zip');
+const PLUGIN_ZIP = path.join(__dirname, 'public', 'controlex-2.3.6.zip');
 const VERSION = (path.basename(PLUGIN_ZIP).match(/controlex-([\d.]+)\.zip/) || [, '?'])[1];
 
 app.get('/plugin', (req, res) => {
-    res.download(PLUGIN_ZIP, 'controlex-2.3.5.zip', err => {
+    res.download(PLUGIN_ZIP, 'controlex-2.3.6.zip', err => {
         if (err) res.status(404).send('Plugin no disponible');
     });
 });
@@ -349,6 +349,25 @@ app.post('/api/screenshot', requireClientAuth, (req, res) => {
 
     const existing = clients.get(clientId);
     const seqNum = existing ? existing.seqNum : ++seqCounter;
+
+    // When a new clientId appears for an already-known machine (hostname +
+    // intellijUser + osUser), evict the prior entries instantly. This kicks in
+    // every time the plugin's clientId changes — e.g., when the alumno asigna
+    // un nombre por primera vez (legacy UUID → deterministic sha256), o cada
+    // vez que renombra (la categoría/apodo formaba parte del hash). Sin esto
+    // la entrada anterior queda colgada como "(sin categoría)" hasta el prune.
+    if (!existing) {
+        const h = String(hostname || 'unknown');
+        const iu = String(intellijUser || 'unknown');
+        const ou = String(osUser || 'unknown');
+        for (const [otherId, c] of clients) {
+            if (otherId !== clientId && c.hostname === h && c.intellijUser === iu && c.osUser === ou) {
+                clients.delete(otherId);
+                onlineState.delete(otherId);
+                broadcast('remove', { clientId: otherId });
+            }
+        }
+    }
 
     clients.set(clientId, {
         clientId,

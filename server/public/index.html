@@ -486,16 +486,20 @@ body {
     margin: 6px 0 4px;
   }
   .tb-actions .tb-btn {
-    background: #f6f8fb;
-    border: 1px solid #d6dde6;
-    color: #213547;
+    background: #fff;
+    border: 1px solid #1565C0;
+    color: #1565C0;
     padding: 11px 12px;
-    font-size: .88rem;
+    font-size: .9rem;
+    font-weight: 600;
     text-align: left;
     border-radius: 7px;
-    min-height: 40px;
+    min-height: 42px;
+    cursor: pointer;
+    transition: background .15s, color .15s, transform .05s;
   }
-  .tb-actions .tb-btn:hover { background: #e8effa; border-color: #b6c8e2; }
+  .tb-actions .tb-btn:hover { background: #E3F2FD; }
+  .tb-actions .tb-btn:active { background: #1565C0; color: #fff; transform: scale(.98); }
 
   .tb-actions .ctrl {
     flex-direction: row; gap: 8px; flex-wrap: wrap;
@@ -617,7 +621,7 @@ body {
 
   <div class="spacer"></div>
 
-  <button class="mode-btn" id="btn-live" onclick="toggleLive()"><span class="mb-icon">🔴</span><span class="mb-label"> Live OFF</span></button>
+  <button class="mode-btn" id="btn-live" onclick="toggleLive()"><span class="mb-icon">⚪</span><span class="mb-label"> Live OFF</span></button>
 
   <button class="hamburger" id="hamburger" aria-label="Menú" aria-controls="tb-actions" aria-expanded="false" onclick="toggleDrawer()">
     <span></span><span></span><span></span>
@@ -827,8 +831,8 @@ async function toggleLive() {
     liveOn = !liveOn;
     const btn = document.getElementById('btn-live');
     btn.innerHTML = liveOn
-        ? '<span class="mb-icon">🔴</span><span class="mb-label"> Live ON</span>'
-        : '<span class="mb-icon">🔴</span><span class="mb-label"> Live OFF</span>';
+        ? '<span class="mb-icon">🟢</span><span class="mb-label"> Live ON</span>'
+        : '<span class="mb-icon">⚪</span><span class="mb-label"> Live OFF</span>';
     btn.classList.toggle('active', liveOn);
     if (liveOn) {
         for (const c of clients) {
@@ -1058,7 +1062,9 @@ function imgUrl(clientId) {
 // ·· Grid ·····················································
 function renderGrid() {
     const gc = document.getElementById('grid-container');
-    const visible = clients.filter(c => !hidden.has(c.clientId));
+    // Offline clients are dropped from view automatically — they reappear when
+    // the alumno's plugin starts heartbeating again.
+    const visible = clients.filter(c => !hidden.has(c.clientId) && c.online);
 
     if (!visible.length) {
         gc.innerHTML = `<div class="empty-state">
@@ -1207,7 +1213,7 @@ async function editCategories(clientId, label) {
 // ·· Mosaic ···················································
 function renderMosaic() {
     const mc   = document.getElementById('mosaic-container');
-    const visible = clients.filter(c => !hidden.has(c.clientId));
+    const visible = clients.filter(c => !hidden.has(c.clientId) && c.online);
     const targets = selectedMosaic.size
         ? visible.filter(c => selectedMosaic.has(c.clientId))
         : visible;
@@ -1367,6 +1373,22 @@ function toggleDrawer() {
 function drawerAct(fn) { try { fn(); } finally { closeDrawer(); } }
 // Reset drawer state when crossing the breakpoint (avoid getting stuck open on resize)
 window.matchMedia('(max-width: 1180px)').addEventListener('change', closeDrawer);
+
+// ── Pair dialog stubs ─────────────────────────────────────────────────────────
+// The full implementation lives in the <script type="module"> at the bottom and
+// depends on CodeMirror via esm.sh. If those imports fail (CDN blocked, offline
+// network), the module never executes and the card's onclick="openPair(...)"
+// would error silently. These stubs at least open the modal and surface the
+// problem; the module overrides them when it loads.
+function openPair(clientId, label) {
+    document.getElementById('pair-sub').textContent  = 'Alumno: ' + label;
+    document.getElementById('pair-path').value       = '';
+    document.getElementById('modal-pair').style.display = 'flex';
+    document.getElementById('pair-status').textContent =
+        'Cargando editor (CodeMirror desde esm.sh)… Si no aparece en unos segundos, comprueba la conexión.';
+}
+function startPairSession() { alert('El editor todavía no se ha cargado.'); }
+function closePair() { closeModal('modal-pair'); }
 
 // ── Quality dialog ────────────────────────────────────────────────────────────
 const Q_WIDTHS = [0, 480, 720, 960, 1280, 1600, 1920];   // 0 = original
