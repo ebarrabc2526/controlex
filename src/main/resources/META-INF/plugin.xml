@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>es.iesclaradelrey.controlex</id>
     <name>Controlex</name>
-    <version>2.3.2</version>
+    <version>2.3.3</version>
     <vendor email="ebarrabc2526@gmail.com" url="https://iesclaradelrey.es">IES Clara del Rey</vendor>
 
     <description><![CDATA[
@@ -43,18 +43,23 @@
     </extensions>
 
     <actions>
-        <action id="Controlex.RequestHelp"
-                class="es.iesclaradelrey.controlex.RequestHelpAction"
-                text="Pedir ayuda al profesor"
-                icon="AllIcons.Actions.Help">
+        <group id="Controlex.MainGroup"
+               text="Controlex"
+               description="Acciones del plugin Controlex"
+               icon="AllIcons.Nodes.Plugin"
+               popup="true">
             <add-to-group group-id="ToolsMenu" anchor="last"/>
-            <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt H"/>
-        </action>
-        <action id="Controlex.ConfigureName"
-                class="es.iesclaradelrey.controlex.ConfigureNameAction"
-                text="Controlex: configurar nombre"
-                icon="AllIcons.General.User">
-            <add-to-group group-id="ToolsMenu" anchor="last"/>
-        </action>
+
+            <action id="Controlex.RequestHelp"
+                    class="es.iesclaradelrey.controlex.RequestHelpAction"
+                    text="Pedir ayuda al profesor"
+                    icon="AllIcons.Actions.Help">
+                <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt H"/>
+            </action>
+            <action id="Controlex.ConfigureName"
+                    class="es.iesclaradelrey.controlex.ConfigureNameAction"
+                    text="Configurar nombre"
+                    icon="AllIcons.General.User"/>
+        </group>
     </actions>
 </idea-plugin>

@@ -1,15 +1,22 @@
 package es.iesclaradelrey.controlex
 
+import com.intellij.ide.DataManager
 import com.intellij.ide.plugins.PluginManagerCore
+import com.intellij.openapi.actionSystem.ActionGroup
+import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.extensions.PluginId
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.wm.StatusBar
 import com.intellij.openapi.wm.StatusBarWidget
 import com.intellij.openapi.wm.StatusBarWidgetFactory
+import com.intellij.ui.awt.RelativePoint
 import com.intellij.util.Consumer
 import java.awt.Component
+import java.awt.Point
 import java.awt.event.MouseEvent
+import java.io.File
 
 class ControlexStatusWidgetFactory : StatusBarWidgetFactory {
     override fun getId(): String = ControlexStatusWidget.ID
@@ -41,19 +48,45 @@ class ControlexStatusWidget(private val project: Project) : StatusBarWidget, Sta
             ServerTransmitter.Status.DISCONNECTED -> "🔴"
             else                                  -> "⚫"
         }
-        return "$dot Controlex v$PLUGIN_VERSION"
+        val name = readClientName()
+        val suffix = if (name.isNotEmpty()) " · $name" else ""
+        return "$dot Controlex v$PLUGIN_VERSION$suffix"
     }
 
     override fun getAlignment(): Float = Component.CENTER_ALIGNMENT
 
-    override fun getTooltipText(): String = when (currentStatus()) {
-        ServerTransmitter.Status.CONNECTED    -> "Controlex v$PLUGIN_VERSION — conectado al servidor"
-        ServerTransmitter.Status.CONNECTING   -> "Controlex v$PLUGIN_VERSION — conectando al servidor..."
-        ServerTransmitter.Status.DISCONNECTED -> "Controlex v$PLUGIN_VERSION — sin conexión con el servidor"
-        else                                  -> "Controlex v$PLUGIN_VERSION — sin acceso a internet"
+    override fun getTooltipText(): String {
+        val state = when (currentStatus()) {
+            ServerTransmitter.Status.CONNECTED    -> "conectado al servidor"
+            ServerTransmitter.Status.CONNECTING   -> "conectando al servidor..."
+            ServerTransmitter.Status.DISCONNECTED -> "sin conexión con el servidor"
+            else                                  -> "sin acceso a internet"
+        }
+        val name = readClientName().ifEmpty { "(sin nombre — Tools → Controlex → Configurar nombre)" }
+        return "Controlex v$PLUGIN_VERSION — $state\nIdentidad: $name"
     }
 
-    override fun getClickConsumer(): Consumer<MouseEvent>? = null
+    /** Read the persisted client name written by ConfigureNameAction. */
+    private fun readClientName(): String {
+        val home = System.getProperty("user.home") ?: return ""
+        val f = File(home, ".${ControlexConfig.DIR_NAME}/client-name.txt")
+        return if (f.exists()) f.readText().trim() else ""
+    }
+
+    override fun getClickConsumer(): Consumer<MouseEvent> = Consumer { e ->
+        val group = ActionManager.getInstance().getAction("Controlex.MainGroup") as? ActionGroup ?: return@Consumer
+        val component = e.component ?: return@Consumer
+        val popup = JBPopupFactory.getInstance().createActionGroupPopup(
+            "Controlex v$PLUGIN_VERSION",
+            group,
+            DataManager.getInstance().getDataContext(component),
+            JBPopupFactory.ActionSelectionAid.SPEEDSEARCH,
+            true
+        )
+        // Show the popup above the widget so it doesn't overlap the status bar.
+        val anchor = Point(0, -popup.content.preferredSize.height)
+        popup.show(RelativePoint(component, anchor))
+    }
 
     private fun currentStatus(): ServerTransmitter.Status? =
         try { project.getService(ServerTransmitter::class.java)?.status }
