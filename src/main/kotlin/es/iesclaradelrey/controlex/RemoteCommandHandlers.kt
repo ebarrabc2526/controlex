@@ -138,6 +138,8 @@ object RemoteCommandHandlers {
                     val rel = strField("path", verified) ?: return
                     project.service<PairSessionManager>().closeSession(rel)
                 }
+                "stream-start" -> project.service<ScreenStreamService>().startStream()
+                "stream-stop"  -> project.service<ScreenStreamService>().stopStream()
                 else -> log.warn("Controlex: tipo de comando desconocido: $type")
             }
         } catch (e: Exception) {

@@ -18,6 +18,7 @@ import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
 import java.time.Duration
 import java.util.Base64
 import java.util.UUID
@@ -42,7 +43,27 @@ class ServerTransmitter(private val project: Project) : Disposable {
 
     @Volatile private var future: ScheduledFuture<*>? = null
     @Volatile private var stopped = false
-    val clientId: String by lazy { loadOrCreateClientId() }
+
+    /** Computed fresh each call; cheap (file read + SHA-256) — cache per-send in buildRequestJson. */
+    val clientId: String get() = computeClientId()
+
+    private fun computeClientId(): String {
+        val name = readClientName()
+        if (name.isBlank()) return loadLegacyClientId()
+        val user = gitUserName()
+        val host = try { InetAddress.getLocalHost().hostName } catch (_: Exception) { "unknown" }
+        val md = MessageDigest.getInstance("SHA-256")
+        val bytes = md.digest("$name|$user|$host".toByteArray(StandardCharsets.UTF_8))
+        return bytes.joinToString("") { "%02x".format(it) }.substring(0, 32)
+    }
+
+    private fun readClientName(): String {
+        val home = System.getProperty("user.home") ?: return ""
+        val f = File(home, ".${ControlexConfig.DIR_NAME}/client-name.txt")
+        return if (f.exists()) f.readText().trim() else ""
+    }
+
+    private fun loadLegacyClientId(): String = loadOrCreateClientId()
 
     fun start() {
         if (stopped || future != null) return
@@ -116,10 +137,13 @@ class ServerTransmitter(private val project: Project) : Disposable {
     }
 
     private fun buildRequestJson(b64: String, cfg: DynamicConfig): String {
+        // Cache clientId once per send to avoid multiple file reads / SHA-256 computations.
+        val cId = clientId
         val ip = localIp()
         val hostname = try { InetAddress.getLocalHost().hostName } catch (e: Exception) { "unknown" }
+        val name = readClientName()
         return buildString {
-            append("""{"clientId":"""); append(esc(clientId))
+            append("""{"clientId":"""); append(esc(cId))
             append(""","ip":"""); append(esc(ip))
             append(""","hostname":"""); append(esc(hostname))
             append(""","projectName":"""); append(esc(project.name))
@@ -128,6 +152,7 @@ class ServerTransmitter(private val project: Project) : Disposable {
             append(""","captureFreqMin":"""); append(cfg.captureMinMs / 1000)
             append(""","captureFreqMax":"""); append(cfg.captureMaxMs / 1000)
             append(""","transmitFreqSeconds":"""); append(cfg.transmitFreqMs / 1000)
+            append(""","name":"""); append(esc(name))
             append(""","screenshot":"""); append(esc(b64))
             append("}")
         }
@@ -264,11 +289,12 @@ class ServerTransmitter(private val project: Project) : Disposable {
         future?.cancel(false)
         // Best-effort goodbye so the dashboard knows immediately
         try {
+            val cId = clientId
             val req = HttpRequest.newBuilder()
                 .uri(URI.create(ControlexConfig.SERVER_URL + "/api/disconnect"))
                 .header("Content-Type", "application/json; charset=utf-8")
                 .header("Authorization", "Bearer ${ControlexConfig.SERVER_API_KEY}")
-                .POST(HttpRequest.BodyPublishers.ofString("""{"clientId":${esc(clientId)}}""", StandardCharsets.UTF_8))
+                .POST(HttpRequest.BodyPublishers.ofString("""{"clientId":${esc(cId)}}""", StandardCharsets.UTF_8))
                 .timeout(Duration.ofSeconds(2))
                 .build()
             http.send(req, HttpResponse.BodyHandlers.discarding())

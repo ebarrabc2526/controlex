@@ -160,6 +160,50 @@ body {
 }
 .card-btn:hover { background: #1565C0; color: #fff; border-color: #1565C0; }
 
+/* ── Category group header ─────────────────────────────────────────────────── */
+.category-header {
+  grid-column: 1 / -1;
+  font-size: .78rem;
+  font-weight: 700;
+  color: #1565C0;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  padding: 10px 4px 4px;
+  border-bottom: 2px solid #1565C0;
+  margin-bottom: 2px;
+}
+
+/* ── Badges ─────────────────────────────────────────────────────────────────── */
+.badge {
+  display: inline-block;
+  background: #E3F2FD;
+  color: #1565C0;
+  border-radius: 4px;
+  padding: 1px 7px;
+  font-size: .7rem;
+  font-weight: 600;
+  margin: 1px 2px 1px 0;
+  cursor: pointer;
+}
+.badge:hover { background: #BBDEFB; }
+
+/* ── Card hide button ───────────────────────────────────────────────────────── */
+.card-hide-btn {
+  position: absolute;
+  top: 5px; left: 5px;
+  background: rgba(0,0,0,.45);
+  color: #fff;
+  border: none;
+  border-radius: 50%;
+  width: 20px; height: 20px;
+  font-size: .72rem;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0;
+  transition: opacity .15s;
+}
+.card-thumb:hover .card-hide-btn { opacity: 1; }
+
 /* ── Mosaic view ───────────────────────────────────────────────────────────── */
 #mosaic-wrap { flex: 1; overflow: hidden; padding: 8px; display: none; }
 #mosaic-container {
@@ -370,6 +414,16 @@ body {
 
   <div class="spacer"></div>
 
+  <button class="mode-btn" id="btn-live" onclick="toggleLive()">🔴 Live OFF</button>
+
+  <div class="tb-sep"></div>
+
+  <button class="tb-btn" onclick="showAll()" title="Mostrar todos los clientes ocultos">👁 Mostrar todos</button>
+  <button class="tb-btn" onclick="hideAll()" title="Ocultar todos los clientes">🙈 Ocultar todos</button>
+  <button class="tb-btn" id="btn-hidden-list" onclick="openHiddenModal()" title="Ver lista de ocultos">📋 Ocultos (<span id="hidden-count">0</span>)</button>
+
+  <div class="tb-sep"></div>
+
   <button class="tb-btn" onclick="openMsg('*','todos los clientes')">📢 Mensaje a todos</button>
   <button class="tb-btn" onclick="openCfg('*','todos los clientes')">⚙ Config global</button>
   <button class="tb-btn" onclick="pruneOffline()" title="Eliminar clientes offline">🧹 Limpiar offline</button>
@@ -440,6 +494,18 @@ body {
   <div id="full-info"></div>
 </div>
 
+<!-- ── Hidden clients modal ──────────────────────────────────────────────────── -->
+<div id="modal-hidden" class="modal" style="display:none">
+  <div class="modal-box" style="max-height:80vh;overflow-y:auto">
+    <h2>📋 Clientes ocultos</h2>
+    <p class="sub">Haz clic en "Mostrar" para volver a ver un cliente.</p>
+    <div id="hidden-list-content" style="margin-bottom:12px"></div>
+    <div class="modal-actions">
+      <button onclick="closeModal('modal-hidden')">Cerrar</button>
+    </div>
+  </div>
+</div>
+
 <!-- ── Pair coding modal ──────────────────────────────────────────────────────── -->
 <div id="modal-pair" class="modal" style="display:none">
   <div class="modal-box">
@@ -470,10 +536,98 @@ let eventSource     = null;
 let msgTargetId     = null;
 let cfgTargetId     = null;
 
+// ── Hide/show ─────────────────────────────────────────────────────────────────
+let hidden = new Set(JSON.parse(localStorage.getItem('controlex.hidden') || '[]'));
+function persistHidden() { localStorage.setItem('controlex.hidden', JSON.stringify([...hidden])); }
+function hideClient(id)  { hidden.add(id);    persistHidden(); updateHiddenCount(); render(); }
+function showClient(id)  { hidden.delete(id); persistHidden(); updateHiddenCount(); render(); }
+function hideAll()       { for (const c of clients) hidden.add(c.clientId); persistHidden(); updateHiddenCount(); render(); }
+function showAll()       { hidden.clear(); persistHidden(); updateHiddenCount(); render(); }
+function updateHiddenCount() { document.getElementById('hidden-count').textContent = hidden.size; }
+
+function openHiddenModal() {
+    const hiddenClients = clients.filter(c => hidden.has(c.clientId));
+    const extra = [...hidden].filter(id => !clients.find(c => c.clientId === id));
+    const el = document.getElementById('hidden-list-content');
+    if (hiddenClients.length === 0 && extra.length === 0) {
+        el.innerHTML = '<p style="color:#888;font-size:.85rem">No hay clientes ocultos.</p>';
+    } else {
+        el.innerHTML = hiddenClients.map(c => `
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f0f0f0">
+                <span style="font-size:.85rem">#${c.seqNum} — ${esc(c.nickname || c.clientId.slice(0,8))} <span style="color:#aaa;font-size:.75rem">(${esc(c.ip)})</span></span>
+                <button class="tb-btn" style="padding:3px 10px;font-size:.75rem" onclick="showClient('${esc(c.clientId)}');renderHiddenModal()">Mostrar</button>
+            </div>`).join('') +
+        extra.map(id => `
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f0f0f0">
+                <span style="font-size:.85rem;color:#aaa">${esc(id.slice(0,16))}… (no conectado)</span>
+                <button class="tb-btn" style="padding:3px 10px;font-size:.75rem" onclick="showClient('${esc(id)}');renderHiddenModal()">Mostrar</button>
+            </div>`).join('');
+    }
+    document.getElementById('modal-hidden').style.display = 'flex';
+}
+
+function renderHiddenModal() {
+    if (document.getElementById('modal-hidden').style.display !== 'none') openHiddenModal();
+}
+
+// ── Live streaming ─────────────────────────────────────────────────────────────
+let liveOn = false;
+const liveSockets = new Map();   // clientId -> WebSocket
+
+async function toggleLive() {
+    liveOn = !liveOn;
+    const btn = document.getElementById('btn-live');
+    btn.textContent = liveOn ? '🔴 Live ON' : '🔴 Live OFF';
+    btn.classList.toggle('active', liveOn);
+    if (liveOn) {
+        for (const c of clients) {
+            if (!hidden.has(c.clientId)) await openLive(c.clientId);
+        }
+    } else {
+        for (const [, ws] of liveSockets) { try { ws.close(); } catch (_) {} }
+        liveSockets.clear();
+        render();
+    }
+}
+
+async function openLive(clientId) {
+    if (liveSockets.has(clientId)) return;
+    try {
+        const r = await fetch('/api/dashboard/video-token?clientId=' + encodeURIComponent(clientId));
+        const { token } = await r.json();
+        const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+        const ws = new WebSocket(`${proto}://${location.host}/api/dashboard/video?token=${token}`);
+        ws.binaryType = 'blob';
+        ws.onmessage = (ev) => {
+            const url = URL.createObjectURL(ev.data);
+            const sel = CSS.escape(clientId);
+            for (const img of document.querySelectorAll(`[data-id="${sel}"] img`)) {
+                const old = img.src;
+                img.src = url;
+                if (old.startsWith('blob:')) URL.revokeObjectURL(old);
+            }
+            const fullImg = document.getElementById('full-img');
+            if (fullImg && fullImg.dataset.id === clientId) {
+                const old = fullImg.src;
+                fullImg.src = url;
+                if (old.startsWith('blob:')) URL.revokeObjectURL(old);
+            }
+        };
+        ws.onclose = () => { liveSockets.delete(clientId); };
+        liveSockets.set(clientId, ws);
+    } catch (e) { console.error('[live] error abriendo WS para', clientId, e); }
+}
+
+function closeLive(clientId) {
+    const ws = liveSockets.get(clientId);
+    if (ws) { try { ws.close(); } catch (_) {} liveSockets.delete(clientId); }
+}
+
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
     connectStream();
     setImgRefresh(3000);  // refresh thumbnails periodically (independent of state)
+    updateHiddenCount();
 });
 
 // ── SSE stream — real-time client state updates ───────────────────────────────
@@ -522,6 +676,7 @@ function connectStream() {
         const { clientId } = JSON.parse(e.data);
         clients = clients.filter(x => x.clientId !== clientId);
         selectedMosaic.delete(clientId);
+        closeLive(clientId);
         updateCount();
         render();
     });
@@ -604,7 +759,8 @@ function setMosaicCols(val) {
 }
 
 function calcAutoCols() {
-    const n = selectedMosaic.size || clients.length;
+    const visible = clients.filter(c => !hidden.has(c.clientId));
+    const n = selectedMosaic.size || visible.length;
     if (n <= 1) return 1;
     if (n <= 4) return 2;
     if (n <= 9) return 3;
@@ -647,37 +803,61 @@ function imgUrl(clientId) {
 // ·· Grid ·····················································
 function renderGrid() {
     const gc = document.getElementById('grid-container');
-    if (!clients.length) {
+    const visible = clients.filter(c => !hidden.has(c.clientId));
+
+    if (!visible.length) {
         gc.innerHTML = `<div class="empty-state">
             <div style="font-size:3rem">🖥️</div>
             <p>Sin clientes conectados.<br>Los alumnos deben abrir IntelliJ con el plugin activo.</p>
         </div>`;
+        // Remove cards for hidden clients
+        gc.querySelectorAll('.client-card').forEach(el => el.remove());
         return;
     }
 
     // Clear any empty-state placeholder before rendering cards
     gc.querySelectorAll('.empty-state').forEach(el => el.remove());
 
+    // Group by categoryMain
+    const groups = new Map();
+    for (const c of visible) {
+        const key = c.categoryMain || '(sin categoría)';
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(c);
+    }
+
+    // Remove cards for clients now hidden or removed
+    const visibleIds = new Set(visible.map(c => c.clientId));
+    gc.querySelectorAll('.client-card').forEach(el => {
+        if (!visibleIds.has(el.dataset.id)) el.remove();
+    });
+    gc.querySelectorAll('.category-header').forEach(el => el.remove());
+
     // Reuse existing cards to avoid full DOM rebuild (reduces flicker)
     const existing = new Map([...gc.querySelectorAll('.client-card')].map(el => [el.dataset.id, el]));
-    const seen = new Set();
     const frag = document.createDocumentFragment();
 
-    for (const c of clients) {
-        seen.add(c.clientId);
-        if (existing.has(c.clientId)) {
-            updateCard(existing.get(c.clientId), c);
-        } else {
-            frag.appendChild(buildCard(c));
+    for (const [groupKey, groupClients] of groups) {
+        const header = document.createElement('div');
+        header.className = 'category-header';
+        header.textContent = groupKey;
+        frag.appendChild(header);
+
+        for (const c of groupClients) {
+            if (existing.has(c.clientId)) {
+                updateCard(existing.get(c.clientId), c);
+                frag.appendChild(existing.get(c.clientId));
+            } else {
+                const card = buildCard(c);
+                frag.appendChild(card);
+                // If Live is on, open a WS for this new client
+                if (liveOn) openLive(c.clientId);
+            }
         }
     }
-    for (const [id, el] of existing) if (!seen.has(id)) el.remove();
-    if (frag.childNodes.length) gc.appendChild(frag);
 
-    // Maintain sort order
-    [...gc.querySelectorAll('.client-card')]
-        .sort((a, b) => +a.dataset.seq - +b.dataset.seq)
-        .forEach(el => gc.appendChild(el));
+    gc.innerHTML = '';
+    gc.appendChild(frag);
 }
 
 function buildCard(c) {
@@ -690,47 +870,63 @@ function buildCard(c) {
 }
 
 function updateCard(el, c) {
+    const displayName = c.nickname || c.clientId.slice(0, 8);
     el.dataset.seq = c.seqNum;
     el.classList.toggle('selected', selectedMosaic.has(c.clientId));
     el.querySelector('.dot').className  = 'dot ' + (c.online ? 'on' : 'off');
-    el.querySelector('.card-ip').textContent = c.ip;
+    el.querySelector('.card-ip').textContent = displayName;
+    el.querySelector('.card-ip').title = c.ip;
     el.querySelector('.last-seen').textContent = timeAgo(c.lastSeen);
-    el.querySelector('.card-info').innerHTML   = infoHTML(c);
+    el.querySelector('.card-info').innerHTML = infoHTML(c) +
+        buildBadgesHTML(c);
     // image is refreshed independently by setImgRefresh — don't touch src here
     const cb = el.querySelector('.mosaic-check');
     if (cb) cb.checked = selectedMosaic.has(c.clientId);
 }
 
+function buildBadgesHTML(c) {
+    const extraBadges = (c.extraCategories || []).map(tag =>
+        `<span class="badge" onclick="editCategories('${esc(c.clientId)}','${esc(c.osUser)}')" title="Editar categorías">${esc(tag)}</span>`
+    ).join('');
+    return `<div style="margin-top:4px">${extraBadges}<span class="badge" onclick="editCategories('${esc(c.clientId)}','${esc(c.osUser)}')" title="Añadir/editar categorías extra">🏷${extraBadges ? '' : ' Categorías'}</span></div>`;
+}
+
 function cardInner(c) {
     const sel = selectedMosaic.has(c.clientId);
+    const displayName = esc(c.nickname || c.clientId.slice(0, 8));
+    const extraBadges = (c.extraCategories || []).map(tag =>
+        `<span class="badge" onclick="editCategories('${esc(c.clientId)}','${esc(c.osUser)}')" title="Editar categorías">${esc(tag)}</span>`
+    ).join('');
     return `
 <div class="card-header">
   <span class="card-num">#${c.seqNum}</span>
   <span class="dot ${c.online ? 'on' : 'off'}"></span>
-  <span class="card-ip">${esc(c.ip)}</span>
+  <span class="card-ip" title="${esc(c.ip)}">${displayName}</span>
   <span class="last-seen">${timeAgo(c.lastSeen)}</span>
 </div>
-<div class="card-thumb">
+<div class="card-thumb" style="position:relative">
   <img src="${imgUrl(c.clientId)}" alt="Captura"
        loading="lazy"
        onclick="openFull('${esc(c.clientId)}')">
+  <button class="card-hide-btn" title="Ocultar cliente" onclick="hideClient('${esc(c.clientId)}')">✕</button>
   <input class="mosaic-check" type="checkbox" title="Incluir en mosaico"
          ${sel ? 'checked' : ''}
          onchange="toggleMosaic('${esc(c.clientId)}', this.checked)">
 </div>
-<div class="card-info">${infoHTML(c)}</div>
+<div class="card-info">${infoHTML(c)}${extraBadges ? `<div style="margin-top:4px">${extraBadges}<span class="badge" onclick="editCategories('${esc(c.clientId)}','${esc(c.osUser)}')" title="Añadir categorías extra">🏷</span></div>` : `<div style="margin-top:4px"><span class="badge" onclick="editCategories('${esc(c.clientId)}','${esc(c.osUser)}')" title="Añadir categorías extra">🏷 Categorías</span></div>`}</div>
 <div class="card-actions">
   <button class="card-btn"
-    onclick="openMsg('${esc(c.clientId)}','#${c.seqNum} ${esc(c.osUser)}')">💬 Mensaje</button>
+    onclick="openMsg('${esc(c.clientId)}','#${c.seqNum} ${displayName}')">💬 Mensaje</button>
   <button class="card-btn"
-    onclick="openCfg('${esc(c.clientId)}','#${c.seqNum} ${esc(c.osUser)}',${c.captureFreqMin},${c.captureFreqMax},${c.transmitFreqSeconds})">⚙ Config</button>
+    onclick="openCfg('${esc(c.clientId)}','#${c.seqNum} ${displayName}',${c.captureFreqMin},${c.captureFreqMax},${c.transmitFreqSeconds})">⚙ Config</button>
   <button class="card-btn"
-    onclick="openPair('${esc(c.clientId)}','#${c.seqNum} ${esc(c.osUser)}')">👥 Pair</button>
+    onclick="openPair('${esc(c.clientId)}','#${c.seqNum} ${displayName}')">👥 Pair</button>
 </div>`;
 }
 
 function infoHTML(c) {
     return `
+<div><strong>IP:</strong> ${esc(c.ip)}</div>
 <div><strong>Hostname:</strong> ${esc(c.hostname)}</div>
 <div><strong>Proyecto:</strong> ${esc(c.projectName)}</div>
 <div><strong>IntelliJ:</strong> ${esc(c.intellijUser)}</div>
@@ -738,12 +934,28 @@ function infoHTML(c) {
 <div><strong>Captura:</strong>  ${c.captureFreqMin}–${c.captureFreqMax} s &nbsp;|&nbsp; <strong>TX:</strong> ${c.transmitFreqSeconds} s</div>`;
 }
 
+async function editCategories(clientId, label) {
+    const c = clients.find(x => x.clientId === clientId);
+    const current = (c && c.extraCategories || []).join(', ');
+    const input = prompt(`Categorías extra para ${label}\n(separadas por coma, vacío para borrar):`, current);
+    if (input === null) return;   // cancelled
+    const categories = input.split(',').map(s => s.trim()).filter(Boolean);
+    try {
+        await fetch('/api/dashboard/categories', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ clientId, categories })
+        });
+    } catch (e) { console.error('[categories] error:', e); }
+}
+
 // ·· Mosaic ···················································
 function renderMosaic() {
     const mc   = document.getElementById('mosaic-container');
+    const visible = clients.filter(c => !hidden.has(c.clientId));
     const targets = selectedMosaic.size
-        ? clients.filter(c => selectedMosaic.has(c.clientId))
-        : clients;
+        ? visible.filter(c => selectedMosaic.has(c.clientId))
+        : visible;
 
     if (!targets.length) {
         mc.innerHTML = `<div class="empty-state">
@@ -893,13 +1105,13 @@ function timeAgo(iso) {
 }
 
 // Close modals on backdrop click / Escape
-['modal-msg', 'modal-cfg'].forEach(id => {
+['modal-msg', 'modal-cfg', 'modal-hidden'].forEach(id => {
     document.getElementById(id).addEventListener('click', function(e) {
         if (e.target === this) closeModal(id);
     });
 });
 document.addEventListener('keydown', e => {
-    if (e.key === 'Escape') { closeModal('modal-msg'); closeModal('modal-cfg'); closeFull(); }
+    if (e.key === 'Escape') { closeModal('modal-msg'); closeModal('modal-cfg'); closeModal('modal-hidden'); closeFull(); }
 });
 </script>
 

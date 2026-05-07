@@ -29,7 +29,23 @@ class ScreenStreamService(private val project: Project) : Disposable {
     @Volatile private var frameTask: ScheduledFuture<*>? = null
     @Volatile private var stopped = false
 
-    fun start() { connect() }
+    /** Called at plugin startup — does NOT open the WS; waits for stream-start command. */
+    fun start() { /* no-op: stream is started on demand via stream-start command */ }
+
+    /** Open the video WS and start emitting frames (called when server sends stream-start). */
+    fun startStream() {
+        if (stopped) return
+        if (ws != null) return  // already active
+        connect()
+    }
+
+    /** Stop emitting frames and close the video WS (called when server sends stream-stop). */
+    fun stopStream() {
+        frameTask?.cancel(false)
+        frameTask = null
+        try { ws?.sendClose(WebSocket.NORMAL_CLOSURE, "stop") } catch (_: Throwable) {}
+        ws = null
+    }
 
     private fun connect() {
         if (stopped) return
@@ -43,7 +59,7 @@ class ScreenStreamService(private val project: Project) : Disposable {
             .buildAsync(uri, WsListener())
             .exceptionally { e ->
                 log.warn("Controlex: error conectando WebSocket de video: ${e.message}")
-                if (!stopped) scheduler.schedule({ connect() }, 5L, TimeUnit.SECONDS)
+                // No auto-reconnect: server will send stream-start again when needed.
                 null
             }
     }
@@ -72,7 +88,8 @@ class ScreenStreamService(private val project: Project) : Disposable {
         override fun onClose(webSocket: WebSocket, statusCode: Int, reason: String): CompletableFuture<*>? {
             ws = null
             frameTask?.cancel(false)
-            if (!stopped) scheduler.schedule({ connect() }, 2L, TimeUnit.SECONDS)
+            frameTask = null
+            // No auto-reconnect: server will send stream-start when there are viewers again.
             return null
         }
 
@@ -80,7 +97,8 @@ class ScreenStreamService(private val project: Project) : Disposable {
             log.warn("Controlex: video WS error: ${error.message}")
             ws = null
             frameTask?.cancel(false)
-            if (!stopped) scheduler.schedule({ connect() }, 2L, TimeUnit.SECONDS)
+            frameTask = null
+            // No auto-reconnect: server will send stream-start when there are viewers again.
         }
     }
 

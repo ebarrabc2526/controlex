@@ -8,8 +8,12 @@ const passport     = require('passport');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const path         = require('path');
 const crypto       = require('crypto');
+const fs           = require('fs');
+const os           = require('os');
 const http         = require('http');
 const { WebSocketServer, WebSocket } = require('ws');
+
+const CATEGORIES_PATH = path.join(os.homedir(), '.controlex-server', 'categories.json');
 
 const app = express();
 const PORT          = process.env.PORT || 3000;
@@ -152,6 +156,25 @@ app.get('/', requireDashboardAuth, (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+// ── Category persistence ──────────────────────────────────────────────────────
+
+const extraCategories = (() => {
+    try {
+        fs.mkdirSync(path.dirname(CATEGORIES_PATH), { recursive: true });
+        if (fs.existsSync(CATEGORIES_PATH)) {
+            return new Map(Object.entries(JSON.parse(fs.readFileSync(CATEGORIES_PATH, 'utf8'))));
+        }
+    } catch (e) { console.warn('[controlex] no se pudo leer categories.json:', e.message); }
+    return new Map();
+})();
+
+function persistCategories() {
+    try {
+        const obj = Object.fromEntries(extraCategories);
+        fs.writeFileSync(CATEGORIES_PATH, JSON.stringify(obj, null, 2));
+    } catch (e) { console.warn('[controlex] no se pudo escribir categories.json:', e.message); }
+}
+
 // In-memory state
 const clients = new Map();
 const pendingCommands = new Map();
@@ -179,7 +202,11 @@ function clientView(c) {
         captureFreqMax:      c.captureFreqMax,
         transmitFreqSeconds: c.transmitFreqSeconds,
         lastSeen:            c.lastSeen,
-        online:              ageMs < thresholdMs
+        online:              ageMs < thresholdMs,
+        name:                c.name || '',
+        categoryMain:        c.categoryMain || null,
+        nickname:            c.nickname || null,
+        extraCategories:     extraCategories.get(c.clientId) || []
     };
 }
 
@@ -197,10 +224,10 @@ function broadcast(event, data) {
 
 // ── Plugin download (public) ──────────────────────────────────────────────────
 
-const PLUGIN_ZIP = path.join(__dirname, 'public', 'controlex-1.9.0.zip');
+const PLUGIN_ZIP = path.join(__dirname, 'public', 'controlex-2.0.0.zip');
 
 app.get('/plugin', (req, res) => {
-    res.download(PLUGIN_ZIP, 'controlex-1.9.0.zip', err => {
+    res.download(PLUGIN_ZIP, 'controlex-2.0.0.zip', err => {
         if (err) res.status(404).send('Plugin no disponible');
     });
 });
@@ -233,11 +260,19 @@ app.post('/api/disconnect', requireClientAuth, (req, res) => {
 app.post('/api/screenshot', requireClientAuth, (req, res) => {
     const {
         clientId, ip, hostname, projectName, intellijUser, osUser,
-        captureFreqMin, captureFreqMax, transmitFreqSeconds, screenshot
+        captureFreqMin, captureFreqMax, transmitFreqSeconds, screenshot, name
     } = req.body;
 
     if (!clientId || !screenshot) {
         return res.status(400).json({ error: 'Faltan campos requeridos: clientId, screenshot' });
+    }
+
+    const rawName = String(name || '').trim();
+    let categoryMain = null, nickname = rawName || null;
+    if (rawName.includes('#')) {
+        const idx = rawName.indexOf('#');
+        categoryMain = rawName.slice(0, idx) || null;
+        nickname     = rawName.slice(idx + 1) || null;
     }
 
     const existing = clients.get(clientId);
@@ -255,7 +290,10 @@ app.post('/api/screenshot', requireClientAuth, (req, res) => {
         captureFreqMax:     Number(captureFreqMax)     || 120,
         transmitFreqSeconds:Number(transmitFreqSeconds)|| 30,
         lastSeen:           new Date(),
-        screenshotData:     Buffer.from(screenshot, 'base64')
+        screenshotData:     Buffer.from(screenshot, 'base64'),
+        name:               rawName,
+        categoryMain,
+        nickname
     });
 
     if (!pendingCommands.has(clientId)) pendingCommands.set(clientId, []);
@@ -512,6 +550,10 @@ app.post('/api/dashboard/command', requireApiAuth, (req, res) => {
             cmd.url = rawUrl.slice(0, 2000);
             break;
         }
+        case 'stream-start':
+        case 'stream-stop':
+            // payload vacío, sólo el type
+            break;
         default:
             return res.status(400).json({ error: `type no soportado: ${type}` });
     }
@@ -582,6 +624,23 @@ app.post('/api/dashboard/config', requireApiAuth, (req, res) => {
         });
     }
     res.json({ ok: true, count: targets.length });
+});
+
+app.post('/api/dashboard/categories', requireApiAuth, (req, res) => {
+    const { clientId, categories } = req.body || {};
+    if (!clientId || !Array.isArray(categories)) {
+        return res.status(400).json({ error: 'clientId y categories obligatorios' });
+    }
+    const clean = categories
+        .map(s => String(s).trim())
+        .filter(s => s.length > 0 && s.length <= 64)
+        .slice(0, 20);
+    if (clean.length === 0) extraCategories.delete(clientId);
+    else extraCategories.set(clientId, clean);
+    persistCategories();
+    const c = clients.get(clientId);
+    if (c) broadcast('update', clientView(c));
+    res.json({ ok: true, categories: clean });
 });
 
 // ── Offline detector + auto-cleanup ───────────────────────────────────────────
@@ -656,14 +715,21 @@ function handlePluginVideoWs(ws, clientId) {
 
 function handleDashboardVideoWs(ws, clientId) {
     if (!videoViewers.has(clientId)) videoViewers.set(clientId, new Set());
-    videoViewers.get(clientId).add(ws);
-    ws.on('close', () => {
-        videoViewers.get(clientId)?.delete(ws);
-        if (videoViewers.get(clientId)?.size === 0) videoViewers.delete(clientId);
-    });
-    ws.on('error', () => {
-        videoViewers.get(clientId)?.delete(ws);
-    });
+    const viewers = videoViewers.get(clientId);
+    const wasEmpty = viewers.size === 0;
+    viewers.add(ws);
+    if (wasEmpty) {
+        pushCommand(clientId, { type: 'stream-start' });
+    }
+    const onViewerGone = () => {
+        viewers.delete(ws);
+        if (videoViewers.get(clientId)?.size === 0) {
+            videoViewers.delete(clientId);
+            pushCommand(clientId, { type: 'stream-stop' });
+        }
+    };
+    ws.on('close', onViewerGone);
+    ws.on('error', onViewerGone);
 }
 
 // ── Start ─────────────────────────────────────────────────────────────────────
