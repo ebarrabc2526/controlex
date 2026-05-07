@@ -272,16 +272,37 @@ function broadcast(event, data) {
 
 // ── Plugin download (public) ──────────────────────────────────────────────────
 
-const PLUGIN_ZIP = path.join(__dirname, 'public', 'controlex-2.3.3.zip');
+const PLUGIN_ZIP = path.join(__dirname, 'public', 'controlex-2.3.4.zip');
 const VERSION = (path.basename(PLUGIN_ZIP).match(/controlex-([\d.]+)\.zip/) || [, '?'])[1];
 
 app.get('/plugin', (req, res) => {
-    res.download(PLUGIN_ZIP, 'controlex-2.3.3.zip', err => {
+    res.download(PLUGIN_ZIP, 'controlex-2.3.4.zip', err => {
         if (err) res.status(404).send('Plugin no disponible');
     });
 });
 
 app.get('/api/version', (req, res) => res.json({ version: VERSION }));
+
+// IntelliJ custom plugin repository: add this URL in
+//   Settings → Plugins → ⚙ → Manage Plugin Repositories…
+// IntelliJ will poll it at startup and when the user runs "Check for updates".
+app.get('/updatePlugins.xml', (req, res) => {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<plugins>
+    <plugin id="es.iesclaradelrey.controlex"
+            url="https://controlex.ebarrab.com/plugin"
+            version="${VERSION}">
+        <name>Controlex</name>
+        <vendor email="ebarrabc2526@gmail.com" url="https://iesclaradelrey.es">IES Clara del Rey</vendor>
+        <idea-version since-build="242"/>
+        <description><![CDATA[Plugin de control para exámenes de programación Java en IntelliJ IDEA.]]></description>
+        <change-notes><![CDATA[Historial completo en https://github.com/ebarrabc2526/controlex/releases]]></change-notes>
+    </plugin>
+</plugins>`;
+    res.set('Content-Type', 'application/xml; charset=utf-8');
+    res.set('Cache-Control', 'no-store');
+    res.send(xml);
+});
 
 // ── Auth middleware for client uploads ────────────────────────────────────────
 
