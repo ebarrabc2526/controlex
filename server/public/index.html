@@ -349,6 +349,13 @@ body {
   display: block;
 }
 #full-info { color: rgba(255,255,255,.8); font-size: .82rem; text-align: center; }
+.full-live-tag {
+  display: inline-block; background: #d32f2f; color: #fff;
+  font-size: .72rem; font-weight: 700; letter-spacing: 1px;
+  padding: 2px 8px; border-radius: 4px; margin-right: 8px;
+  animation: liveBlink 1.4s infinite;
+}
+@keyframes liveBlink { 0%, 50% { opacity: 1 } 51%, 100% { opacity: .35 } }
 
 /* Pair coding modal */
 #modal-pair .modal-box {
@@ -1225,6 +1232,8 @@ function cardInner(c) {
     onclick="openCfg('${esc(c.clientId)}','#${c.seqNum} ${displayName}',${c.captureFreqMin},${c.captureFreqMax},${c.transmitFreqSeconds})">⚙ Config</button>
   <button class="card-btn"
     onclick="openPair('${esc(c.clientId)}','#${c.seqNum} ${displayName}')">👥 Pair</button>
+  <button class="card-btn"
+    onclick="openFullLive('${esc(c.clientId)}')" title="Ver en directo a pantalla completa">🎥 Live</button>
 </div>`;
 }
 
@@ -1338,11 +1347,32 @@ function openFull(clientId) {
     document.getElementById('modal-full').style.display = 'flex';
 }
 
+// Tracks the client whose live we started specifically for the fullscreen view,
+// so we can close it when leaving (without affecting global "Live ON" state).
+let _fullscreenLiveClient = null;
+
+async function openFullLive(clientId) {
+    // If a different client's fullscreen-live is already running, close it.
+    if (_fullscreenLiveClient && _fullscreenLiveClient !== clientId && !liveOn) {
+        closeLive(_fullscreenLiveClient);
+    }
+    _fullscreenLiveClient = null;
+    openFull(clientId);
+    document.getElementById('full-info').insertAdjacentHTML('afterbegin',
+        '<span class="full-live-tag">🔴 LIVE</span> ');
+    if (!liveSockets.has(clientId)) {
+        await openLive(clientId);
+        if (!liveOn) _fullscreenLiveClient = clientId;
+    }
+}
+
 function closeFull() {
     document.getElementById('modal-full').style.display = 'none';
     const fullImg = document.getElementById('full-img');
     fullImg.src = '';
     delete fullImg.dataset.id;
+    if (_fullscreenLiveClient && !liveOn) closeLive(_fullscreenLiveClient);
+    _fullscreenLiveClient = null;
 }
 
 // ── Message dialog ────────────────────────────────────────────────────────────
