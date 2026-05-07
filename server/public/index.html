@@ -496,9 +496,15 @@ body {
     border-radius: 7px;
     min-height: 42px;
     cursor: pointer;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: rgba(21,101,192,.25);
     transition: background .15s, color .15s, transform .05s;
   }
-  .tb-actions .tb-btn:hover { background: #E3F2FD; }
+  /* Skip :hover on touch devices — iOS turns first tap into a hover
+     instead of a click, which made the buttons feel "disabled". */
+  @media (hover: hover) {
+    .tb-actions .tb-btn:hover { background: #E3F2FD; }
+  }
   .tb-actions .tb-btn:active { background: #1565C0; color: #fff; transform: scale(.98); }
 
   .tb-actions .ctrl {
@@ -636,20 +642,20 @@ body {
     </div>
 
     <div class="drawer-group" data-label="Visibilidad">
-      <button class="tb-btn" onclick="drawerAct(showAll)" title="Mostrar todos los clientes ocultos">👁 Mostrar todos</button>
-      <button class="tb-btn" onclick="drawerAct(hideAll)" title="Ocultar todos los clientes">🙈 Ocultar todos</button>
-      <button class="tb-btn" id="btn-hidden-list" onclick="drawerAct(openHiddenModal)" title="Ver lista de ocultos">📋 Ocultos (<span id="hidden-count">0</span>)</button>
+      <button class="tb-btn" type="button" data-drawer-action="showAll"          title="Mostrar todos los clientes ocultos">👁 Mostrar todos</button>
+      <button class="tb-btn" type="button" data-drawer-action="hideAll"          title="Ocultar todos los clientes">🙈 Ocultar todos</button>
+      <button class="tb-btn" type="button" id="btn-hidden-list" data-drawer-action="openHiddenModal" title="Ver lista de ocultos">📋 Ocultos (<span id="hidden-count">0</span>)</button>
     </div>
 
     <div class="drawer-group" data-label="Comunicación">
-      <button class="tb-btn" onclick="drawerAct(()=>openMsg('*','todos los clientes'))">📢 Mensaje a todos</button>
-      <button class="tb-btn" onclick="drawerAct(()=>openCfg('*','todos los clientes'))">⚙ Config global</button>
-      <button class="tb-btn" onclick="drawerAct(openQuality)" title="Calidad JPEG, FPS y resolución (global / por categoría / por cliente)">🎚 Calidad</button>
+      <button class="tb-btn" type="button" data-drawer-action="openMsgAll">📢 Mensaje a todos</button>
+      <button class="tb-btn" type="button" data-drawer-action="openCfgAll">⚙ Config global</button>
+      <button class="tb-btn" type="button" data-drawer-action="openQuality" title="Calidad JPEG, FPS y resolución (global / por categoría / por cliente)">🎚 Calidad</button>
     </div>
 
     <div class="drawer-group" data-label="Mantenimiento">
-      <button class="tb-btn" onclick="drawerAct(pruneOffline)" title="Eliminar clientes offline">🧹 Limpiar offline</button>
-      <button class="tb-btn" onclick="drawerAct(wipeAll)" title="Eliminar TODOS los clientes">🗑️ Vaciar todos</button>
+      <button class="tb-btn" type="button" data-drawer-action="pruneOffline" title="Eliminar clientes offline">🧹 Limpiar offline</button>
+      <button class="tb-btn" type="button" data-drawer-action="wipeAll"      title="Eliminar TODOS los clientes">🗑️ Vaciar todos</button>
     </div>
 
     <div class="drawer-group" data-label="Refresco">
@@ -1369,14 +1375,41 @@ function toggleDrawer() {
     if (document.getElementById('tb-actions').getAttribute('data-drawer-open') === 'true') closeDrawer();
     else openDrawer();
 }
-/** Wrap an action so that, when triggered from the drawer, it closes it. */
-function drawerAct(fn) { try { fn(); } finally { closeDrawer(); } }
+// Drawer action dispatcher. Buttons inside #tb-actions declare what they do
+// via data-drawer-action="<name>". A single delegated listener finds the
+// closest [data-drawer-action], closes the drawer first (so the user gets
+// instant visual feedback) and runs the action — surfacing any error via
+// console + alert instead of swallowing it (previous bug: try/finally hid
+// failures, so all buttons appeared "disabled").
+const drawerActions = {
+    showAll, hideAll, openHiddenModal, openQuality, pruneOffline, wipeAll,
+    openMsgAll: () => openMsg('*', 'todos los clientes'),
+    openCfgAll: () => openCfg('*', 'todos los clientes')
+};
+document.getElementById('tb-actions').addEventListener('click', e => {
+    const btn = e.target.closest('[data-drawer-action]');
+    if (!btn) return;
+    const name = btn.dataset.drawerAction;
+    const fn = drawerActions[name];
+    closeDrawer();
+    if (typeof fn !== 'function') {
+        console.warn('Drawer: unknown action', name);
+        alert('Acción no disponible: ' + name);
+        return;
+    }
+    try { fn(); }
+    catch (err) {
+        console.error('Drawer action error:', name, err);
+        alert('Error en "' + name + '": ' + (err && err.message ? err.message : err));
+    }
+});
+
 // Reset drawer state when crossing the breakpoint (avoid getting stuck open on resize)
 window.matchMedia('(max-width: 1180px)').addEventListener('change', closeDrawer);
 
 // ── Pair dialog stubs ─────────────────────────────────────────────────────────
 // The full implementation lives in the <script type="module"> at the bottom and
-// depends on CodeMirror via esm.sh. If those imports fail (CDN blocked, offline
+// depends on CodeMirror via esm.run. If those imports fail (CDN blocked, offline
 // network), the module never executes and the card's onclick="openPair(...)"
 // would error silently. These stubs at least open the modal and surface the
 // problem; the module overrides them when it loads.
@@ -1385,7 +1418,7 @@ function openPair(clientId, label) {
     document.getElementById('pair-path').value       = '';
     document.getElementById('modal-pair').style.display = 'flex';
     document.getElementById('pair-status').textContent =
-        'Cargando editor (CodeMirror desde esm.sh)… Si no aparece en unos segundos, comprueba la conexión.';
+        'Cargando editor (CodeMirror desde esm.run)… Si no aparece en unos segundos, comprueba la conexión.';
 }
 function startPairSession() { alert('El editor todavía no se ha cargado.'); }
 function closePair() { closeModal('modal-pair'); }
@@ -1525,16 +1558,18 @@ document.addEventListener('keydown', e => {
 });
 </script>
 
-<!-- ── CodeMirror 6 via esm.sh CDN ───────────────────────────────────────────── -->
+<!-- ── CodeMirror 6 via jsdelivr ESM (esm.run) ──────────────────────────────────
+     esm.sh tends to be blocked by school proxies; jsdelivr passes through more
+     filters and serves the same packages. -->
 <script type="module">
 'use strict';
 
-import { EditorView, keymap, lineNumbers } from 'https://esm.sh/@codemirror/view@6';
-import { EditorState, Transaction } from 'https://esm.sh/@codemirror/state@6';
-import { defaultKeymap, history, historyKeymap } from 'https://esm.sh/@codemirror/commands@6';
-import { oneDark } from 'https://esm.sh/@codemirror/theme-one-dark@6';
-import { StateField, StateEffect, Decoration } from 'https://esm.sh/@codemirror/state@6';
-import { WidgetType } from 'https://esm.sh/@codemirror/view@6';
+import { EditorView, keymap, lineNumbers } from 'https://esm.run/@codemirror/view@6';
+import { EditorState, Transaction } from 'https://esm.run/@codemirror/state@6';
+import { defaultKeymap, history, historyKeymap } from 'https://esm.run/@codemirror/commands@6';
+import { oneDark } from 'https://esm.run/@codemirror/theme-one-dark@6';
+import { StateField, StateEffect, Decoration } from 'https://esm.run/@codemirror/state@6';
+import { WidgetType } from 'https://esm.run/@codemirror/view@6';
 
 // ── Pair state ────────────────────────────────────────────────────────────────
 let pairClientId   = null;
