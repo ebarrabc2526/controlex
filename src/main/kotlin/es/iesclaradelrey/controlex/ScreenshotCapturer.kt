@@ -13,10 +13,10 @@ import javax.imageio.ImageWriteParam
 object ScreenshotCapturer {
 
     /**
-     * Capture all screens as PNG (lossless).
+     * Capture all screens as PNG (lossless, byte-faithful to the framebuffer).
      *
      * @param maxWidthOverride if > 0, downscale to this width (height proportional);
-     *        if 0 (default), fall back to the static [ControlexConfig.ANCHO_MAX_PX].
+     *        if 0, no cap is applied — the native screen resolution is used.
      */
     fun captureAllScreensAsPng(maxWidthOverride: Int = 0): ByteArray {
         ByteArrayOutputStream().use { baos ->
@@ -30,7 +30,7 @@ object ScreenshotCapturer {
      *
      * @param quality 0.01..1.0
      * @param maxWidthOverride if > 0, downscale to this width (height proportional);
-     *        if 0 (default), fall back to the static [ControlexConfig.ANCHO_MAX_PX].
+     *        if 0, no cap is applied — the native screen resolution is used.
      */
     fun captureAllScreensAsJpeg(quality: Float, maxWidthOverride: Int = 0): ByteArray {
         val image = captureAndScale(maxWidthOverride)
@@ -66,9 +66,12 @@ object ScreenshotCapturer {
             bounds = ge.defaultScreenDevice.defaultConfiguration.bounds
         }
         val raw: BufferedImage = Robot().createScreenCapture(bounds)
-        val effectiveW = if (maxWidthOverride > 0) maxWidthOverride else ControlexConfig.ANCHO_MAX_PX
-        // Height stays implicit (proportional via maxW). The legacy ALTO_MAX_PX cap still applies if set.
-        return scaleIfNeeded(raw, effectiveW, ControlexConfig.ALTO_MAX_PX)
+        // Quality is now driven *exclusively* by per-context QualityConfig.
+        // maxWidthOverride == 0 means "no cap" (i.e. native screen resolution),
+        // and we no longer apply the legacy static caps from ControlexConfig
+        // (ANCHO_MAX_PX / ALTO_MAX_PX) — they were silently downscaling
+        // captures even when the panel asked for "Original".
+        return scaleIfNeeded(raw, maxWidthOverride, 0)
     }
 
     private fun scaleIfNeeded(src: BufferedImage, maxW: Int, maxH: Int): BufferedImage {
