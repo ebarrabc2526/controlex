@@ -36,7 +36,13 @@ class ScreenStreamService(private val project: Project) : Disposable {
     fun startStream() {
         if (stopped) return
         if (ws != null) return  // already active
+        // Re-arm the frame loop whenever the panel changes quality (fps in particular).
+        project.service<QualityConfig>().addListener { restartFrameLoopIfActive() }
         connect()
+    }
+
+    private fun restartFrameLoopIfActive() {
+        if (ws != null) startFrameLoop()
     }
 
     /** Stop emitting frames and close the video WS (called when server sends stream-stop). */
@@ -66,13 +72,14 @@ class ScreenStreamService(private val project: Project) : Disposable {
 
     private fun startFrameLoop() {
         frameTask?.cancel(false)
-        val intervalMs = (1000L / ControlexConfig.STREAM_FPS).coerceAtLeast(50L)
+        val q = project.service<QualityConfig>()
+        val intervalMs = (1000L / q.streamFps.coerceAtLeast(1)).coerceAtLeast(50L)
         frameTask = scheduler.scheduleAtFixedRate({
             if (stopped) { frameTask?.cancel(false); return@scheduleAtFixedRate }
             val localWs = ws ?: return@scheduleAtFixedRate
             if (localWs.isOutputClosed) { frameTask?.cancel(false); return@scheduleAtFixedRate }
             try {
-                val jpeg = ScreenshotCapturer.captureAllScreensAsJpeg(ControlexConfig.STREAM_JPEG_QUALITY)
+                val jpeg = ScreenshotCapturer.captureAllScreensAsJpeg(q.jpegQualityFloat(), q.maxWidthPx)
                 localWs.sendBinary(ByteBuffer.wrap(jpeg), true)
             } catch (_: Throwable) {}
         }, 0L, intervalMs, TimeUnit.MILLISECONDS)

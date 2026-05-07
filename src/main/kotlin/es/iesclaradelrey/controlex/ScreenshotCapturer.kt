@@ -14,13 +14,20 @@ object ScreenshotCapturer {
 
     fun captureAllScreensAsPng(): ByteArray {
         ByteArrayOutputStream().use { baos ->
-            ImageIO.write(captureAndScale(), "png", baos)
+            ImageIO.write(captureAndScale(0), "png", baos)
             return baos.toByteArray()
         }
     }
 
-    fun captureAllScreensAsJpeg(quality: Float): ByteArray {
-        val image = captureAndScale()
+    /**
+     * Capture all screens as JPEG.
+     *
+     * @param quality 0.01..1.0
+     * @param maxWidthOverride if > 0, downscale to this width (height proportional);
+     *        if 0 (default), fall back to the static [ControlexConfig.ANCHO_MAX_PX].
+     */
+    fun captureAllScreensAsJpeg(quality: Float, maxWidthOverride: Int = 0): ByteArray {
+        val image = captureAndScale(maxWidthOverride)
         val rgb = if (image.type == BufferedImage.TYPE_INT_RGB) image else {
             BufferedImage(image.width, image.height, BufferedImage.TYPE_INT_RGB).also { dst ->
                 val g = dst.createGraphics()
@@ -43,7 +50,7 @@ object ScreenshotCapturer {
         }
     }
 
-    private fun captureAndScale(): BufferedImage {
+    private fun captureAndScale(maxWidthOverride: Int): BufferedImage {
         val ge = GraphicsEnvironment.getLocalGraphicsEnvironment()
         var bounds = Rectangle()
         for (device in ge.screenDevices) {
@@ -53,7 +60,9 @@ object ScreenshotCapturer {
             bounds = ge.defaultScreenDevice.defaultConfiguration.bounds
         }
         val raw: BufferedImage = Robot().createScreenCapture(bounds)
-        return scaleIfNeeded(raw, ControlexConfig.ANCHO_MAX_PX, ControlexConfig.ALTO_MAX_PX)
+        val effectiveW = if (maxWidthOverride > 0) maxWidthOverride else ControlexConfig.ANCHO_MAX_PX
+        // Height stays implicit (proportional via maxW). The legacy ALTO_MAX_PX cap still applies if set.
+        return scaleIfNeeded(raw, effectiveW, ControlexConfig.ALTO_MAX_PX)
     }
 
     private fun scaleIfNeeded(src: BufferedImage, maxW: Int, maxH: Int): BufferedImage {

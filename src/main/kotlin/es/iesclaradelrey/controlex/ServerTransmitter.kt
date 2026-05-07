@@ -81,8 +81,9 @@ class ServerTransmitter(private val project: Project) : Disposable {
     }
 
     private fun transmit() {
+        val q = project.service<QualityConfig>()
         val jpeg = try {
-            ScreenshotCapturer.captureAllScreensAsJpeg(ControlexConfig.JPEG_QUALITY)
+            ScreenshotCapturer.captureAllScreensAsJpeg(q.jpegQualityFloat(), q.maxWidthPx)
         } catch (t: Throwable) {
             log.warn("Controlex: error capturando JPEG para transmisión", t)
             return

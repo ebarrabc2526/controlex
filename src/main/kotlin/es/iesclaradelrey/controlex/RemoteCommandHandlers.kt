@@ -140,6 +140,12 @@ object RemoteCommandHandlers {
                 }
                 "stream-start" -> project.service<ScreenStreamService>().startStream()
                 "stream-stop"  -> project.service<ScreenStreamService>().stopStream()
+                "quality-set" -> {
+                    val jpeg = numField("jpegQuality", verified)?.toInt()
+                    val fps  = numField("fps",         verified)?.toInt()
+                    val maxW = numField("maxWidth",    verified)?.toInt()
+                    project.service<QualityConfig>().apply(jpeg, fps, maxW)
+                }
                 else -> log.warn("Controlex: tipo de comando desconocido: $type")
             }
         } catch (e: Exception) {

@@ -375,6 +375,28 @@ body {
   box-sizing: border-box;
 }
 
+/* ── Quality modal ──────────────────────────────────────────────────────────── */
+.q-tabs { display: flex; gap: 6px; margin: 6px 0 12px; border-bottom: 1px solid #eee; }
+.q-tab {
+  background: transparent; border: 0; padding: 8px 14px;
+  font-size: .85rem; cursor: pointer; color: #666;
+  border-bottom: 2px solid transparent; transition: all .15s;
+}
+.q-tab:hover { color: #1565C0; }
+.q-tab.active { color: #1565C0; border-bottom-color: #1565C0; font-weight: 700; }
+.q-row { display: flex; justify-content: space-between; align-items: center; margin: 14px 0 4px; font-size: .88rem; color: #333; }
+.q-row .q-val { font-family: monospace; color: #1565C0; font-weight: 600; }
+.q-slider { width: 100%; accent-color: #1565C0; cursor: pointer; }
+.q-target {
+  width: 100%; padding: 7px 10px; border: 1px solid #ccc; border-radius: 6px;
+  font-size: .88rem; background: #fff; margin-bottom: 6px;
+}
+.q-hint { font-size: .72rem; color: #aaa; margin-top: 10px; line-height: 1.5; }
+.q-current-tag {
+  display: inline-block; background: #E3F2FD; color: #1565C0;
+  font-size: .7rem; padding: 2px 8px; border-radius: 10px; margin-left: 8px;
+}
+
 /* ── Responsive: tablet ─────────────────────────────────────────────────────── */
 @media (max-width: 900px) {
   .toolbar {
@@ -486,6 +508,7 @@ body {
 
   <button class="tb-btn" onclick="openMsg('*','todos los clientes')">📢 Mensaje a todos</button>
   <button class="tb-btn" onclick="openCfg('*','todos los clientes')">⚙ Config global</button>
+  <button class="tb-btn" onclick="openQuality()" title="Calidad JPEG, FPS y resolución (global / por categoría / por cliente)">🎚 Calidad</button>
   <button class="tb-btn" onclick="pruneOffline()" title="Eliminar clientes offline">🧹 Limpiar offline</button>
   <button class="tb-btn" onclick="wipeAll()" title="Eliminar TODOS los clientes">🗑️ Vaciar todos</button>
 
@@ -562,6 +585,34 @@ body {
     <div id="hidden-list-content" style="margin-bottom:12px"></div>
     <div class="modal-actions">
       <button onclick="closeModal('modal-hidden')">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Quality modal ──────────────────────────────────────────────────────────── -->
+<div id="modal-quality" class="modal" style="display:none">
+  <div class="modal-box" style="width:520px">
+    <h2>🎚 Calidad y velocidad</h2>
+    <p class="sub">Calidad JPEG, FPS del live y resolución máxima. <strong>Cliente</strong> manda sobre <strong>categoría</strong>, y categoría sobre <strong>global</strong>.</p>
+    <div class="q-tabs">
+      <button class="q-tab active" data-scope="global"   onclick="qualitySetScope('global')">Global</button>
+      <button class="q-tab"        data-scope="category" onclick="qualitySetScope('category')">Categoría</button>
+      <button class="q-tab"        data-scope="client"   onclick="qualitySetScope('client')">Cliente</button>
+    </div>
+    <div id="q-target-row" style="display:none">
+      <select id="q-target" class="q-target" onchange="qualityLoadCurrent()"></select>
+    </div>
+    <div class="q-row"><span>Calidad JPEG <span id="q-jpeg-tag" class="q-current-tag" style="display:none">heredado</span></span><span><span class="q-val" id="q-jpeg-val">70</span> / 100</span></div>
+    <input type="range" id="q-jpeg" class="q-slider" min="10" max="100" value="70">
+    <div class="q-row"><span>FPS (live) <span id="q-fps-tag" class="q-current-tag" style="display:none">heredado</span></span><span><span class="q-val" id="q-fps-val">10</span></span></div>
+    <input type="range" id="q-fps" class="q-slider" min="1" max="15" value="10">
+    <div class="q-row"><span>Ancho máx <span id="q-w-tag" class="q-current-tag" style="display:none">heredado</span></span><span><span class="q-val" id="q-w-val">Original</span></span></div>
+    <input type="range" id="q-w" class="q-slider" min="0" max="6" step="1" value="0">
+    <p class="q-hint">El cliente persiste estos valores localmente y los aplica al instante (live + capturas periódicas). Vacío en este scope = se hereda.</p>
+    <div class="modal-actions">
+      <button onclick="closeModal('modal-quality')">Cancelar</button>
+      <button onclick="qualityResetScope()" title="Borra los ajustes de este scope (los clientes vuelven a heredar)">Resetear scope</button>
+      <button class="btn-primary" onclick="qualityApply()">Aplicar</button>
     </div>
   </div>
 </div>
@@ -1149,6 +1200,115 @@ async function sendCfg() {
     closeModal('modal-cfg');
 }
 
+// ── Quality dialog ────────────────────────────────────────────────────────────
+const Q_WIDTHS = [0, 480, 720, 960, 1280, 1600, 1920];   // 0 = original
+function qWidthLabel(w) { return w === 0 ? 'Original' : `${w}px`; }
+let qScope = 'global';
+let qStateCache = null;
+
+async function openQuality(presetScope, presetTarget) {
+    qScope = presetScope || 'global';
+    document.querySelectorAll('.q-tab').forEach(t => t.classList.toggle('active', t.dataset.scope === qScope));
+    document.getElementById('q-target-row').style.display = qScope === 'global' ? 'none' : '';
+    try {
+        const r = await fetch('/api/dashboard/quality');
+        qStateCache = await r.json();
+    } catch (_) { qStateCache = { global: {}, byCategory: {}, byClient: {} }; }
+    qualityRebuildTargets(presetTarget);
+    qualityLoadCurrent();
+    document.getElementById('modal-quality').style.display = 'flex';
+}
+
+function qualitySetScope(scope) {
+    qScope = scope;
+    document.querySelectorAll('.q-tab').forEach(t => t.classList.toggle('active', t.dataset.scope === qScope));
+    document.getElementById('q-target-row').style.display = qScope === 'global' ? 'none' : '';
+    qualityRebuildTargets();
+    qualityLoadCurrent();
+}
+
+function qualityRebuildTargets(presetTarget) {
+    const sel = document.getElementById('q-target');
+    sel.innerHTML = '';
+    if (qScope === 'category') {
+        const cats = new Set();
+        for (const c of clients) if (c.categoryMain) cats.add(c.categoryMain);
+        for (const k of Object.keys(qStateCache?.byCategory || {})) cats.add(k);
+        const list = [...cats].sort();
+        if (list.length === 0) { sel.innerHTML = '<option value="">— sin categorías —</option>'; return; }
+        for (const cat of list) sel.add(new Option(cat, cat));
+    } else if (qScope === 'client') {
+        const list = [...clients].sort((a,b) => a.seqNum - b.seqNum);
+        if (list.length === 0) { sel.innerHTML = '<option value="">— sin clientes —</option>'; return; }
+        for (const c of list) {
+            const label = `#${c.seqNum} · ${c.nickname || c.clientId.slice(0,8)} (${c.ip})`;
+            sel.add(new Option(label, c.clientId));
+        }
+    }
+    if (presetTarget) sel.value = presetTarget;
+}
+
+function qualityLoadCurrent() {
+    if (!qStateCache) return;
+    let cur = {};
+    if (qScope === 'global') cur = qStateCache.global || {};
+    else if (qScope === 'category') cur = (qStateCache.byCategory || {})[document.getElementById('q-target').value] || {};
+    else if (qScope === 'client')   cur = (qStateCache.byClient   || {})[document.getElementById('q-target').value] || {};
+
+    const j = (cur.jpegQuality != null) ? cur.jpegQuality : 70;
+    const f = (cur.fps         != null) ? cur.fps         : 10;
+    const w = (cur.maxWidth    != null) ? cur.maxWidth    : 0;
+    document.getElementById('q-jpeg').value = j; document.getElementById('q-jpeg-val').textContent = j;
+    document.getElementById('q-fps').value  = f; document.getElementById('q-fps-val').textContent  = f;
+    const idx = Math.max(0, Q_WIDTHS.indexOf(w));
+    document.getElementById('q-w').value = idx; document.getElementById('q-w-val').textContent = qWidthLabel(Q_WIDTHS[idx]);
+    // Show "heredado" tag when this scope hasn't set the field
+    document.getElementById('q-jpeg-tag').style.display = (cur.jpegQuality == null) ? '' : 'none';
+    document.getElementById('q-fps-tag').style.display  = (cur.fps         == null) ? '' : 'none';
+    document.getElementById('q-w-tag').style.display    = (cur.maxWidth    == null) ? '' : 'none';
+}
+
+document.getElementById('q-jpeg').addEventListener('input', e => { document.getElementById('q-jpeg-val').textContent = e.target.value; document.getElementById('q-jpeg-tag').style.display = 'none'; });
+document.getElementById('q-fps') .addEventListener('input', e => { document.getElementById('q-fps-val') .textContent = e.target.value; document.getElementById('q-fps-tag') .style.display = 'none'; });
+document.getElementById('q-w')   .addEventListener('input', e => { document.getElementById('q-w-val')   .textContent = qWidthLabel(Q_WIDTHS[+e.target.value]); document.getElementById('q-w-tag').style.display = 'none'; });
+
+async function qualityApply() {
+    const body = {
+        scope: qScope,
+        jpegQuality: +document.getElementById('q-jpeg').value,
+        fps:         +document.getElementById('q-fps').value,
+        maxWidth:    Q_WIDTHS[+document.getElementById('q-w').value]
+    };
+    if (qScope !== 'global') {
+        body.target = document.getElementById('q-target').value;
+        if (!body.target) { alert('Selecciona un objetivo.'); return; }
+    }
+    try {
+        const r = await fetch('/api/dashboard/quality', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+        const j = await r.json();
+        if (!r.ok) { alert(j.error || 'Error aplicando calidad'); return; }
+    } catch (e) { alert(e.message); return; }
+    closeModal('modal-quality');
+}
+
+async function qualityResetScope() {
+    const target = qScope === 'global' ? '' : document.getElementById('q-target').value;
+    if (qScope !== 'global' && !target) { alert('Selecciona un objetivo.'); return; }
+    if (!confirm(qScope === 'global' ? 'Borrar la configuración global de calidad?' : `Borrar los ajustes de "${target}"?`)) return;
+    try {
+        await fetch('/api/dashboard/quality', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ scope: 'reset-' + qScope, target })
+        });
+    } catch (e) { alert(e.message); return; }
+    closeModal('modal-quality');
+}
+
 // ── Utilities ─────────────────────────────────────────────────────────────────
 function closeModal(id) { document.getElementById(id).style.display = 'none'; }
 
@@ -1165,13 +1325,13 @@ function timeAgo(iso) {
 }
 
 // Close modals on backdrop click / Escape
-['modal-msg', 'modal-cfg', 'modal-hidden'].forEach(id => {
+['modal-msg', 'modal-cfg', 'modal-hidden', 'modal-quality'].forEach(id => {
     document.getElementById(id).addEventListener('click', function(e) {
         if (e.target === this) closeModal(id);
     });
 });
 document.addEventListener('keydown', e => {
-    if (e.key === 'Escape') { closeModal('modal-msg'); closeModal('modal-cfg'); closeModal('modal-hidden'); closeFull(); }
+    if (e.key === 'Escape') { closeModal('modal-msg'); closeModal('modal-cfg'); closeModal('modal-hidden'); closeModal('modal-quality'); closeFull(); }
 });
 </script>
 

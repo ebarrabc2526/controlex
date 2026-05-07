@@ -14,6 +14,7 @@ const http         = require('http');
 const { WebSocketServer, WebSocket } = require('ws');
 
 const CATEGORIES_PATH = path.join(os.homedir(), '.controlex-server', 'categories.json');
+const QUALITY_PATH    = path.join(os.homedir(), '.controlex-server', 'quality.json');
 
 const app = express();
 const PORT          = process.env.PORT || 3000;
@@ -175,6 +176,53 @@ function persistCategories() {
     } catch (e) { console.warn('[controlex] no se pudo escribir categories.json:', e.message); }
 }
 
+// ── Quality persistence ───────────────────────────────────────────────────────
+
+const qualityState = (() => {
+    const fallback = { global: {}, byCategory: {}, byClient: {} };
+    try {
+        fs.mkdirSync(path.dirname(QUALITY_PATH), { recursive: true });
+        if (fs.existsSync(QUALITY_PATH)) {
+            const raw = JSON.parse(fs.readFileSync(QUALITY_PATH, 'utf8'));
+            return {
+                global:     raw.global     || {},
+                byCategory: raw.byCategory || {},
+                byClient:   raw.byClient   || {}
+            };
+        }
+    } catch (e) { console.warn('[controlex] no se pudo leer quality.json:', e.message); }
+    return fallback;
+})();
+
+function persistQuality() {
+    try { fs.writeFileSync(QUALITY_PATH, JSON.stringify(qualityState, null, 2)); }
+    catch (e) { console.warn('[controlex] no se pudo escribir quality.json:', e.message); }
+}
+
+function sanitizeQuality(input) {
+    const out = {};
+    if (input && Number.isFinite(+input.jpegQuality)) out.jpegQuality = Math.max(1,  Math.min(100,  Math.round(+input.jpegQuality)));
+    if (input && Number.isFinite(+input.fps))         out.fps         = Math.max(1,  Math.min(15,   Math.round(+input.fps)));
+    if (input && Number.isFinite(+input.maxWidth))    out.maxWidth    = Math.max(0,  Math.min(3840, Math.round(+input.maxWidth)));
+    return out;
+}
+
+function effectiveQuality(clientId) {
+    const c = clients.get(clientId);
+    const cat = c?.categoryMain || null;
+    return {
+        ...(qualityState.global || {}),
+        ...((cat && qualityState.byCategory[cat]) || {}),
+        ...((qualityState.byClient[clientId]) || {})
+    };
+}
+
+function pushQuality(clientId) {
+    const eff = effectiveQuality(clientId);
+    if (Object.keys(eff).length === 0) return false;
+    return pushCommand(clientId, { type: 'quality-set', ...eff });
+}
+
 // In-memory state
 const clients = new Map();
 const pendingCommands = new Map();
@@ -224,10 +272,10 @@ function broadcast(event, data) {
 
 // ── Plugin download (public) ──────────────────────────────────────────────────
 
-const PLUGIN_ZIP = path.join(__dirname, 'public', 'controlex-2.1.0.zip');
+const PLUGIN_ZIP = path.join(__dirname, 'public', 'controlex-2.2.0.zip');
 
 app.get('/plugin', (req, res) => {
-    res.download(PLUGIN_ZIP, 'controlex-2.1.0.zip', err => {
+    res.download(PLUGIN_ZIP, 'controlex-2.2.0.zip', err => {
         if (err) res.status(404).send('Plugin no disponible');
     });
 });
@@ -300,6 +348,10 @@ app.post('/api/screenshot', requireClientAuth, (req, res) => {
     const commands = pendingCommands.get(clientId).splice(0);
 
     broadcast(existing ? 'update' : 'add', clientView(clients.get(clientId)));
+
+    // Resync quality config with the client whenever its category changes
+    // (or on first registration). Cheap to repeat; the plugin is idempotent.
+    if (!existing || existing.categoryMain !== categoryMain) pushQuality(clientId);
 
     res.json({ commands });
 });
@@ -624,6 +676,49 @@ app.post('/api/dashboard/config', requireApiAuth, (req, res) => {
         });
     }
     res.json({ ok: true, count: targets.length });
+});
+
+app.get('/api/dashboard/quality', requireApiAuth, (req, res) => {
+    res.json(qualityState);
+});
+
+app.post('/api/dashboard/quality', requireApiAuth, (req, res) => {
+    const { scope, target } = req.body || {};
+    const settings = sanitizeQuality(req.body);
+    const key = String(target || '').trim();
+
+    let affectedClientIds = [];
+
+    if (scope === 'global') {
+        qualityState.global = { ...qualityState.global, ...settings };
+        affectedClientIds = Array.from(clients.keys());
+    } else if (scope === 'category') {
+        if (!key) return res.status(400).json({ error: 'target (categoría) obligatorio' });
+        qualityState.byCategory[key] = { ...(qualityState.byCategory[key] || {}), ...settings };
+        affectedClientIds = Array.from(clients.values()).filter(c => c.categoryMain === key).map(c => c.clientId);
+    } else if (scope === 'client') {
+        if (!key) return res.status(400).json({ error: 'target (clientId) obligatorio' });
+        qualityState.byClient[key] = { ...(qualityState.byClient[key] || {}), ...settings };
+        if (clients.has(key)) affectedClientIds = [key];
+    } else if (scope === 'reset-global') {
+        qualityState.global = {};
+        affectedClientIds = Array.from(clients.keys());
+    } else if (scope === 'reset-category') {
+        if (!key) return res.status(400).json({ error: 'target (categoría) obligatorio' });
+        delete qualityState.byCategory[key];
+        affectedClientIds = Array.from(clients.values()).filter(c => c.categoryMain === key).map(c => c.clientId);
+    } else if (scope === 'reset-client') {
+        if (!key) return res.status(400).json({ error: 'target (clientId) obligatorio' });
+        delete qualityState.byClient[key];
+        if (clients.has(key)) affectedClientIds = [key];
+    } else {
+        return res.status(400).json({ error: "scope inválido" });
+    }
+    persistQuality();
+
+    let pushed = 0;
+    for (const id of affectedClientIds) { if (pushQuality(id)) pushed++; }
+    res.json({ ok: true, pushed, state: qualityState });
 });
 
 app.post('/api/dashboard/categories', requireApiAuth, (req, res) => {
