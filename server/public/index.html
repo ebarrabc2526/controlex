@@ -31,6 +31,7 @@ body {
   z-index: 100;
 }
 .toolbar h1 { font-size: 1.1rem; font-weight: 800; letter-spacing: 3px; white-space: nowrap; }
+.tb-ver { font-size: .68rem; font-weight: 600; letter-spacing: 0; color: rgba(255,255,255,.65); margin-left: 6px; vertical-align: middle; }
 .tb-count { font-size: 0.78rem; opacity: .75; white-space: nowrap; }
 .tb-sep { width: 1px; height: 28px; background: rgba(255,255,255,.25); flex-shrink: 0; }
 .spacer { flex: 1; }
@@ -566,6 +567,7 @@ body {
 @media (max-width: 480px) {
   .toolbar h1 { font-size: 0; letter-spacing: 0; }
   .toolbar h1::before { content: "CTX"; font-size: .82rem; letter-spacing: 1.5px; font-weight: 800; }
+  .tb-ver { display: none; }     /* keep the CTX badge clean on tiny screens */
   .mode-btn .mb-label { display: none; }
   .mode-btn { padding: 6px 9px; }
   #grid-ctrl { display: none; }   /* size slider hidden on phones; default thumb size ok */
@@ -581,7 +583,7 @@ body {
 
 <!-- ── Toolbar ─────────────────────────────────────────────────────────────── -->
 <header class="toolbar">
-  <h1>CONTROLEX</h1>
+  <h1>CONTROLEX<span class="tb-ver" id="tb-ver"></span></h1>
   <span class="tb-count" id="tb-count">—</span>
 
   <div class="tb-sep"></div>
@@ -877,6 +879,10 @@ document.addEventListener('DOMContentLoaded', () => {
     connectStream();
     setImgRefresh(3000);  // refresh thumbnails periodically (independent of state)
     updateHiddenCount();
+    fetch('/api/version')
+        .then(r => r.json())
+        .then(j => { if (j.version) document.getElementById('tb-ver').textContent = 'v' + j.version; })
+        .catch(() => {});
 });
 
 // ── SSE stream — real-time client state updates ───────────────────────────────
