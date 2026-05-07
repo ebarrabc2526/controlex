@@ -30,8 +30,15 @@ body {
   box-shadow: 0 2px 8px rgba(0,0,0,.3);
   z-index: 100;
 }
-.toolbar h1 { font-size: 1.1rem; font-weight: 800; letter-spacing: 3px; white-space: nowrap; }
-.tb-ver { font-size: .68rem; font-weight: 600; letter-spacing: 0; color: rgba(255,255,255,.65); margin-left: 6px; vertical-align: middle; }
+.toolbar h1 {
+  font-size: 1.1rem; font-weight: 800; letter-spacing: 3px; white-space: nowrap;
+  display: flex; flex-direction: column; line-height: 1; gap: 2px;
+}
+.tb-ver {
+  font-size: .58rem; font-weight: 500; letter-spacing: .5px;
+  color: rgba(255,255,255,.6);
+  align-self: flex-start;
+}
 .tb-count { font-size: 0.78rem; opacity: .75; white-space: nowrap; }
 .tb-sep { width: 1px; height: 28px; background: rgba(255,255,255,.25); flex-shrink: 0; }
 .spacer { flex: 1; }
@@ -922,10 +929,7 @@ document.addEventListener('DOMContentLoaded', () => {
     connectStream();
     setImgRefresh(3000);  // refresh thumbnails periodically (independent of state)
     updateHiddenCount();
-    fetch('/api/version')
-        .then(r => r.json())
-        .then(j => { if (j.version) document.getElementById('tb-ver').textContent = 'v' + j.version; })
-        .catch(() => {});
+    // Version is injected server-side into #tb-ver, no fetch needed.
 });
 
 // ── SSE stream — real-time client state updates ───────────────────────────────

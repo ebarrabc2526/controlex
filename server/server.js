@@ -154,7 +154,14 @@ app.get('/forbidden', (req, res) => {
 // ── Static (only for authorized dashboard users) ──────────────────────────────
 // Serve index.html and dashboard assets ONLY behind auth.
 app.get('/', requireDashboardAuth, (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    // Inject the current plugin version into the toolbar so the user sees it
+    // immediately (no flash from a fetch /api/version round-trip).
+    let html = fs.readFileSync(path.join(__dirname, 'public', 'index.html'), 'utf8');
+    const v = currentVersion();
+    html = html.replace('id="tb-ver"></span>', `id="tb-ver">v${v}</span>`);
+    res.set('Content-Type', 'text/html; charset=utf-8');
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.send(html);
 });
 
 // ── Category persistence ──────────────────────────────────────────────────────
