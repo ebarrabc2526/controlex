@@ -461,6 +461,11 @@ body {
   }
   .tb-actions[data-drawer-open="true"] { transform: translateX(0); }
 
+  /* En modo drawer, el toolbar no debe formar stacking context propio
+     (z-index:100), porque atraparía al drawer y el backdrop quedaría
+     por encima → drawer en gris, clicks bloqueados. */
+  .toolbar { z-index: auto; }
+
   .tb-actions .drawer-header {
     display: flex; align-items: center; justify-content: space-between;
     border-bottom: 1px solid #eee; padding-bottom: 10px; margin-bottom: 4px;
