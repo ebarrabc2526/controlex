@@ -1375,33 +1375,34 @@ function toggleDrawer() {
     if (document.getElementById('tb-actions').getAttribute('data-drawer-open') === 'true') closeDrawer();
     else openDrawer();
 }
-// Drawer action dispatcher. Buttons inside #tb-actions declare what they do
-// via data-drawer-action="<name>". A single delegated listener finds the
-// closest [data-drawer-action], closes the drawer first (so the user gets
-// instant visual feedback) and runs the action — surfacing any error via
-// console + alert instead of swallowing it (previous bug: try/finally hid
-// failures, so all buttons appeared "disabled").
+// Drawer action dispatcher. Attach listeners DIRECTLY to each button (not
+// delegated) so iOS Safari can't lose the click while the drawer is closing.
+// Run the action FIRST, then close the drawer in a finally — this way:
+//   1. The action fires regardless of whether the drawer animation interferes.
+//   2. Errors are surfaced via alert (so a broken action is obvious).
+//   3. The drawer always closes, even on error.
 const drawerActions = {
     showAll, hideAll, openHiddenModal, openQuality, pruneOffline, wipeAll,
     openMsgAll: () => openMsg('*', 'todos los clientes'),
     openCfgAll: () => openCfg('*', 'todos los clientes')
 };
-document.getElementById('tb-actions').addEventListener('click', e => {
-    const btn = e.target.closest('[data-drawer-action]');
-    if (!btn) return;
-    const name = btn.dataset.drawerAction;
-    const fn = drawerActions[name];
-    closeDrawer();
-    if (typeof fn !== 'function') {
-        console.warn('Drawer: unknown action', name);
-        alert('Acción no disponible: ' + name);
-        return;
-    }
-    try { fn(); }
-    catch (err) {
-        console.error('Drawer action error:', name, err);
-        alert('Error en "' + name + '": ' + (err && err.message ? err.message : err));
-    }
+document.querySelectorAll('#tb-actions [data-drawer-action]').forEach(btn => {
+    btn.addEventListener('click', () => {
+        const name = btn.dataset.drawerAction;
+        const fn = drawerActions[name];
+        try {
+            if (typeof fn !== 'function') {
+                alert('Acción no disponible: ' + name);
+                return;
+            }
+            fn();
+        } catch (err) {
+            console.error('Drawer action error:', name, err);
+            alert('Error en "' + name + '": ' + (err && err.message ? err.message : err));
+        } finally {
+            closeDrawer();
+        }
+    });
 });
 
 // Reset drawer state when crossing the breakpoint (avoid getting stuck open on resize)
