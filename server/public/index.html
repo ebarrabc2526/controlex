@@ -775,7 +775,7 @@ body {
     <div class="q-section">
       <h3 class="q-section-title">📦 ZIP local del alumno <span class="q-section-hint">PNG sin pérdida</span></h3>
       <div class="q-row"><span>Ancho máx <span id="q-arch-w-tag" class="q-current-tag" style="display:none">heredado</span></span><span><span class="q-val" id="q-arch-w-val">Original</span></span></div>
-      <input type="range" id="q-arch-w" class="q-slider" min="0" max="6" step="1" value="0">
+      <input type="range" id="q-arch-w" class="q-slider" min="0" max="6" step="1" value="6">
     </div>
 
     <div class="q-section">
@@ -783,7 +783,7 @@ body {
       <div class="q-row"><span>Calidad JPEG <span id="q-pan-j-tag" class="q-current-tag" style="display:none">heredado</span></span><span><span class="q-val" id="q-pan-j-val">70</span> / 100</span></div>
       <input type="range" id="q-pan-j" class="q-slider" min="10" max="100" value="70">
       <div class="q-row"><span>Ancho máx <span id="q-pan-w-tag" class="q-current-tag" style="display:none">heredado</span></span><span><span class="q-val" id="q-pan-w-val">1280px</span></span></div>
-      <input type="range" id="q-pan-w" class="q-slider" min="0" max="6" step="1" value="4">
+      <input type="range" id="q-pan-w" class="q-slider" min="0" max="6" step="1" value="3">
     </div>
 
     <div class="q-section">
@@ -791,7 +791,7 @@ body {
       <div class="q-row"><span>Calidad JPEG <span id="q-liv-j-tag" class="q-current-tag" style="display:none">heredado</span></span><span><span class="q-val" id="q-liv-j-val">55</span> / 100</span></div>
       <input type="range" id="q-liv-j" class="q-slider" min="10" max="100" value="55">
       <div class="q-row"><span>Ancho máx <span id="q-liv-w-tag" class="q-current-tag" style="display:none">heredado</span></span><span><span class="q-val" id="q-liv-w-val">720px</span></span></div>
-      <input type="range" id="q-liv-w" class="q-slider" min="0" max="6" step="1" value="2">
+      <input type="range" id="q-liv-w" class="q-slider" min="0" max="6" step="1" value="1">
       <div class="q-row"><span>FPS <span id="q-liv-f-tag" class="q-current-tag" style="display:none">heredado</span></span><span><span class="q-val" id="q-liv-f-val">10</span></span></div>
       <input type="range" id="q-liv-f" class="q-slider" min="1" max="15" value="10">
     </div>
@@ -1462,7 +1462,9 @@ function startPairSession() { alert('El editor todavía no se ha cargado.'); }
 function closePair() { closeModal('modal-pair'); }
 
 // ── Quality dialog ────────────────────────────────────────────────────────────
-const Q_WIDTHS = [0, 480, 720, 960, 1280, 1600, 1920];   // 0 = original
+// Slider de izquierda (mínimo) a derecha (máximo). 0 = Original (sin downscale)
+// va al final para que arrastrar a tope a la derecha = máxima resolución.
+const Q_WIDTHS = [480, 720, 960, 1280, 1600, 1920, 0];
 function qWidthLabel(w) { return w === 0 ? 'Original' : `${w}px`; }
 let qScope = 'global';
 let qStateCache = null;
@@ -1575,15 +1577,15 @@ function qualityLoadCurrent() {
 // "calidad visual"). Mover uno sincroniza el otro. Para desacoplar, mueve
 // el segundo slider después; un flag _qSyncing evita el ping-pong.
 function jpegToWidthIdx(j) {
-    if (j >= 95) return 0;
-    if (j >= 85) return 6;
-    if (j >= 75) return 5;
-    if (j >= 60) return 4;
-    if (j >= 45) return 3;
-    if (j >= 30) return 2;
-    return 1;
+    if (j >= 95) return 6;  // Original
+    if (j >= 85) return 5;  // 1920
+    if (j >= 75) return 4;  // 1600
+    if (j >= 60) return 3;  // 1280
+    if (j >= 45) return 2;  // 960
+    if (j >= 30) return 1;  // 720
+    return 0;               // 480
 }
-function widthIdxToJpeg(idx) { return [100, 20, 35, 55, 70, 80, 90][idx] ?? 80; }
+function widthIdxToJpeg(idx) { return [20, 35, 55, 70, 80, 90, 100][idx] ?? 80; }
 
 function bindNumberSlider(id, valId, tagId) {
     document.getElementById(id).addEventListener('input', e => {
