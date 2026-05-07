@@ -11,7 +11,14 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   background: #f0f2f5;
   color: #212121;
+  /* iOS Safari: 100vh es la altura ASUMIENDO que la barra de URL está oculta;
+     cuando está visible (siempre en iPad), el body queda más alto que la zona
+     visible y los botones inferiores de las cards no son alcanzables. dvh
+     (dynamic viewport height) se ajusta a la zona realmente visible.
+     Cascada con fallback para navegadores antiguos. */
   height: 100vh;
+  height: -webkit-fill-available;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -40,6 +47,14 @@ body {
   align-self: center;
 }
 .tb-count { font-size: 0.78rem; opacity: .75; white-space: nowrap; }
+.tb-quality {
+  font-size: .72rem; font-weight: 600; white-space: nowrap;
+  background: rgba(255,255,255,.15); border: 1px solid rgba(255,255,255,.3);
+  color: #fff; padding: 4px 10px; border-radius: 14px; cursor: pointer;
+  transition: background .15s;
+}
+.tb-quality:hover { background: rgba(255,255,255,.28); }
+.tb-quality.is-max { background: #ffd54f; color: #1565C0; border-color: #ffd54f; }
 .tb-sep { width: 1px; height: 28px; background: rgba(255,255,255,.25); flex-shrink: 0; }
 .spacer { flex: 1; }
 
@@ -497,6 +512,7 @@ body {
     top: 0; right: 0;
     width: 300px; max-width: 86vw;
     height: 100vh;
+    height: 100dvh;
     background: #fff;
     color: #212121;
     flex-direction: column;
@@ -650,6 +666,7 @@ body {
 <header class="toolbar">
   <h1>CONTROLEX<span class="tb-ver" id="tb-ver"></span></h1>
   <span class="tb-count" id="tb-count">—</span>
+  <span class="tb-quality" id="tb-quality" onclick="openQuality()" title="Calidad global activa — pulsa para configurar">🎚 …</span>
 
   <div class="tb-sep"></div>
 
@@ -969,8 +986,35 @@ document.addEventListener('DOMContentLoaded', () => {
     connectStream();
     setImgRefresh(3000);  // refresh thumbnails periodically (independent of state)
     updateHiddenCount();
+    refreshQualityBadge();
     // Version is injected server-side into #tb-ver, no fetch needed.
 });
+
+// Refresh the toolbar quality badge from /api/dashboard/quality.
+// Shown as 🎚 PNG·Orig (yellow background) when global is at max quality,
+// or 🎚 JPEG70·1280 (blue translucent) otherwise. Click → openQuality().
+async function refreshQualityBadge() {
+    try {
+        const r = await fetch('/api/dashboard/quality');
+        const state = await r.json();
+        const g = state.global || {};
+        const pan = g.panel || {}; const liv = g.live || {};
+        const fmtP = pan.format || 'jpeg';
+        const fmtL = liv.format || 'jpeg';
+        const wP   = pan.maxWidth ?? 1280;
+        const wL   = liv.maxWidth ?? 720;
+        const isMax = fmtP === 'png' && fmtL === 'png' && wP === 0 && wL === 0;
+        const fmtLabel = (f, q, w) => {
+            const wTxt = w === 0 ? 'Orig' : `${w}px`;
+            return f === 'png' ? `PNG·${wTxt}` : `JPEG${q ?? '?'}·${wTxt}`;
+        };
+        const txt = isMax ? '🔥 Máxima · PNG·Orig'
+                          : `🎚 P:${fmtLabel(fmtP, pan.jpegQuality, wP)} · L:${fmtLabel(fmtL, liv.jpegQuality, wL)}`;
+        const el = document.getElementById('tb-quality');
+        el.textContent = txt;
+        el.classList.toggle('is-max', isMax);
+    } catch (_) { /* keep placeholder */ }
+}
 
 // ── SSE stream — real-time client state updates ───────────────────────────────
 function connectStream() {
@@ -1777,6 +1821,7 @@ async function qualityApply() {
         if (!r.ok) { alert(j.error || 'Error aplicando calidad'); return; }
     } catch (e) { alert(e.message); return; }
     closeModal('modal-quality');
+    refreshQualityBadge();
 }
 
 async function qualityResetScope() {
@@ -1791,6 +1836,7 @@ async function qualityResetScope() {
         });
     } catch (e) { alert(e.message); return; }
     closeModal('modal-quality');
+    refreshQualityBadge();
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────────────

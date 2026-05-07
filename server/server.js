@@ -59,7 +59,10 @@ passport.use(new GoogleStrategy({
 }));
 
 app.set('trust proxy', 1);
-app.use(express.json({ limit: '25mb' }));
+// 100 MB lets the plugin send PNG of multi-monitor 4K/5K setups without
+// hitting payload limits. PNG of a single 4K screen ≈ 5-15 MB, multi-monitor
+// can easily exceed 25 MB, which was the previous (too-strict) ceiling.
+app.use(express.json({ limit: '100mb' }));
 app.use(session({
     secret: SESSION_SECRET,
     resave: false,
@@ -1089,7 +1092,9 @@ setInterval(() => {
 // ── WebSocket server (video streaming) ────────────────────────────────────────
 
 const httpServer = http.createServer(app);
-const wss = new WebSocketServer({ noServer: true });
+// 100 MB per-frame ceiling for live PNG frames (default would let the
+// underlying TCP buffers decide, which can drop big frames silently).
+const wss = new WebSocketServer({ noServer: true, maxPayload: 100 * 1024 * 1024 });
 
 httpServer.on('upgrade', (req, socket, head) => {
     const url = new URL(req.url, `http://localhost`);
