@@ -177,6 +177,35 @@ function persistCategories() {
 }
 
 // ── Quality persistence ───────────────────────────────────────────────────────
+// Three independent contexts:
+//   - archive: PNG saved to the local zip on the student's machine. Only maxWidth.
+//   - panel:   JPEG snapshots transmitted periodically to this server. jpegQuality + maxWidth.
+//   - live:    JPEG WebSocket frames. jpegQuality + maxWidth + fps.
+// Per-context settings are nested inside each scope:
+//   { global: { archive:{...}, panel:{...}, live:{...} },
+//     byCategory: { name: {archive,panel,live} }, byClient: {...} }
+// Older flat-shape configs are migrated on load.
+
+const QUALITY_CONTEXTS = ['archive', 'panel', 'live'];
+
+function migrateLegacyScope(scope) {
+    if (!scope || typeof scope !== 'object') return {};
+    if (QUALITY_CONTEXTS.some(c => c in scope)) return scope; // already new
+    const out = {};
+    if (scope.maxWidth != null) {
+        out.archive = { maxWidth: scope.maxWidth };
+        out.panel   = { maxWidth: scope.maxWidth };
+        out.live    = { maxWidth: scope.maxWidth };
+    }
+    if (scope.jpegQuality != null) {
+        out.panel = { ...(out.panel || {}), jpegQuality: scope.jpegQuality };
+        out.live  = { ...(out.live  || {}), jpegQuality: scope.jpegQuality };
+    }
+    if (scope.fps != null) {
+        out.live = { ...(out.live || {}), fps: scope.fps };
+    }
+    return out;
+}
 
 const qualityState = (() => {
     const fallback = { global: {}, byCategory: {}, byClient: {} };
@@ -184,11 +213,14 @@ const qualityState = (() => {
         fs.mkdirSync(path.dirname(QUALITY_PATH), { recursive: true });
         if (fs.existsSync(QUALITY_PATH)) {
             const raw = JSON.parse(fs.readFileSync(QUALITY_PATH, 'utf8'));
-            return {
-                global:     raw.global     || {},
-                byCategory: raw.byCategory || {},
-                byClient:   raw.byClient   || {}
+            const out = {
+                global:     migrateLegacyScope(raw.global || {}),
+                byCategory: {},
+                byClient:   {}
             };
+            for (const k of Object.keys(raw.byCategory || {})) out.byCategory[k] = migrateLegacyScope(raw.byCategory[k]);
+            for (const k of Object.keys(raw.byClient   || {})) out.byClient[k]   = migrateLegacyScope(raw.byClient[k]);
+            return out;
         }
     } catch (e) { console.warn('[controlex] no se pudo leer quality.json:', e.message); }
     return fallback;
@@ -199,22 +231,46 @@ function persistQuality() {
     catch (e) { console.warn('[controlex] no se pudo escribir quality.json:', e.message); }
 }
 
+function sanitizeContext(ctx, input) {
+    const out = {};
+    if (!input || typeof input !== 'object') return out;
+    const num = (v, lo, hi) => Number.isFinite(+v) ? Math.max(lo, Math.min(hi, Math.round(+v))) : null;
+    if (ctx === 'archive') {
+        const w = num(input.maxWidth, 0, 3840);    if (w != null) out.maxWidth = w;
+    } else if (ctx === 'panel') {
+        const j = num(input.jpegQuality, 1, 100);  if (j != null) out.jpegQuality = j;
+        const w = num(input.maxWidth, 0, 3840);    if (w != null) out.maxWidth    = w;
+    } else if (ctx === 'live') {
+        const j = num(input.jpegQuality, 1, 100);  if (j != null) out.jpegQuality = j;
+        const w = num(input.maxWidth, 0, 3840);    if (w != null) out.maxWidth    = w;
+        const f = num(input.fps,         1, 15);   if (f != null) out.fps         = f;
+    }
+    return out;
+}
+
 function sanitizeQuality(input) {
     const out = {};
-    if (input && Number.isFinite(+input.jpegQuality)) out.jpegQuality = Math.max(1,  Math.min(100,  Math.round(+input.jpegQuality)));
-    if (input && Number.isFinite(+input.fps))         out.fps         = Math.max(1,  Math.min(15,   Math.round(+input.fps)));
-    if (input && Number.isFinite(+input.maxWidth))    out.maxWidth    = Math.max(0,  Math.min(3840, Math.round(+input.maxWidth)));
+    for (const ctx of QUALITY_CONTEXTS) {
+        const c = sanitizeContext(ctx, input?.[ctx]);
+        if (Object.keys(c).length) out[ctx] = c;
+    }
     return out;
 }
 
 function effectiveQuality(clientId) {
     const c = clients.get(clientId);
     const cat = c?.categoryMain || null;
-    return {
-        ...(qualityState.global || {}),
-        ...((cat && qualityState.byCategory[cat]) || {}),
-        ...((qualityState.byClient[clientId]) || {})
-    };
+    const layers = [
+        qualityState.global || {},
+        cat ? (qualityState.byCategory[cat] || {}) : {},
+        qualityState.byClient[clientId] || {}
+    ];
+    const eff = {};
+    for (const ctx of QUALITY_CONTEXTS) {
+        const merged = Object.assign({}, ...layers.map(l => l[ctx] || {}));
+        if (Object.keys(merged).length) eff[ctx] = merged;
+    }
+    return eff;
 }
 
 function pushQuality(clientId) {
@@ -923,21 +979,31 @@ app.get('/api/dashboard/quality', requireApiAuth, (req, res) => {
 
 app.post('/api/dashboard/quality', requireApiAuth, (req, res) => {
     const { scope, target } = req.body || {};
-    const settings = sanitizeQuality(req.body);
+    const settings = sanitizeQuality(req.body);   // { archive?, panel?, live? }
     const key = String(target || '').trim();
+
+    function mergeInto(holder) {
+        for (const ctx of QUALITY_CONTEXTS) {
+            if (!settings[ctx]) continue;
+            holder[ctx] = { ...(holder[ctx] || {}), ...settings[ctx] };
+        }
+    }
 
     let affectedClientIds = [];
 
     if (scope === 'global') {
-        qualityState.global = { ...qualityState.global, ...settings };
+        qualityState.global = qualityState.global || {};
+        mergeInto(qualityState.global);
         affectedClientIds = Array.from(clients.keys());
     } else if (scope === 'category') {
         if (!key) return res.status(400).json({ error: 'target (categoría) obligatorio' });
-        qualityState.byCategory[key] = { ...(qualityState.byCategory[key] || {}), ...settings };
+        qualityState.byCategory[key] = qualityState.byCategory[key] || {};
+        mergeInto(qualityState.byCategory[key]);
         affectedClientIds = Array.from(clients.values()).filter(c => c.categoryMain === key).map(c => c.clientId);
     } else if (scope === 'client') {
         if (!key) return res.status(400).json({ error: 'target (clientId) obligatorio' });
-        qualityState.byClient[key] = { ...(qualityState.byClient[key] || {}), ...settings };
+        qualityState.byClient[key] = qualityState.byClient[key] || {};
+        mergeInto(qualityState.byClient[key]);
         if (clients.has(key)) affectedClientIds = [key];
     } else if (scope === 'reset-global') {
         qualityState.global = {};

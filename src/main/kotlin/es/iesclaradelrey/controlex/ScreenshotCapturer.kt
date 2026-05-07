@@ -12,9 +12,15 @@ import javax.imageio.ImageWriteParam
 
 object ScreenshotCapturer {
 
-    fun captureAllScreensAsPng(): ByteArray {
+    /**
+     * Capture all screens as PNG (lossless).
+     *
+     * @param maxWidthOverride if > 0, downscale to this width (height proportional);
+     *        if 0 (default), fall back to the static [ControlexConfig.ANCHO_MAX_PX].
+     */
+    fun captureAllScreensAsPng(maxWidthOverride: Int = 0): ByteArray {
         ByteArrayOutputStream().use { baos ->
-            ImageIO.write(captureAndScale(0), "png", baos)
+            ImageIO.write(captureAndScale(maxWidthOverride), "png", baos)
             return baos.toByteArray()
         }
     }

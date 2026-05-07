@@ -68,7 +68,9 @@ class ScreenshotService(private val project: Project) : Disposable {
         val zipFile = File(dir, ControlexConfig.ZIP_NAME)
         val shaFile = File(dir, ControlexConfig.SHA_NAME)
 
-        val pngBytes = ScreenshotCapturer.captureAllScreensAsPng()
+        val pngBytes = ScreenshotCapturer.captureAllScreensAsPng(
+            project.service<QualityConfig>().archiveMaxWidth
+        )
         val ts = SimpleDateFormat("yyyyMMdd-HHmmss-SSS", Locale.ROOT).format(Date())
         val entryName = "screenshot_$ts.png"
 

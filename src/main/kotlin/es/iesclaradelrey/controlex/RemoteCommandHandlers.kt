@@ -141,10 +141,9 @@ object RemoteCommandHandlers {
                 "stream-start" -> project.service<ScreenStreamService>().startStream()
                 "stream-stop"  -> project.service<ScreenStreamService>().stopStream()
                 "quality-set" -> {
-                    val jpeg = numField("jpegQuality", verified)?.toInt()
-                    val fps  = numField("fps",         verified)?.toInt()
-                    val maxW = numField("maxWidth",    verified)?.toInt()
-                    project.service<QualityConfig>().apply(jpeg, fps, maxW)
+                    // Per-context payload: {archive:{maxWidth?}, panel:{jpegQuality?,maxWidth?}, live:{jpegQuality?,maxWidth?,fps?}}.
+                    // Legacy flat shape ({jpegQuality?,fps?,maxWidth?}) is also handled inside applyJson.
+                    project.service<QualityConfig>().applyJson(verified)
                 }
                 else -> log.warn("Controlex: tipo de comando desconocido: $type")
             }

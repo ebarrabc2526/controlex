@@ -397,6 +397,15 @@ body {
   display: inline-block; background: #E3F2FD; color: #1565C0;
   font-size: .7rem; padding: 2px 8px; border-radius: 10px; margin-left: 8px;
 }
+.q-section {
+  border: 1px solid #e8e8e8; border-radius: 8px; padding: 8px 14px 14px;
+  margin: 12px 0 0; background: #fafbfd;
+}
+.q-section-title {
+  font-size: .92rem; font-weight: 700; color: #1565C0;
+  margin: 4px 0 2px; display: flex; align-items: baseline; gap: 8px;
+}
+.q-section-hint { font-size: .72rem; font-weight: 400; color: #888; }
 
 /* ── Toolbar inline action group (desktop default) ─────────────────────────── */
 .tb-actions { display: flex; align-items: center; gap: 6px; }
@@ -744,9 +753,9 @@ body {
 
 <!-- ── Quality modal ──────────────────────────────────────────────────────────── -->
 <div id="modal-quality" class="modal" style="display:none">
-  <div class="modal-box" style="width:520px">
+  <div class="modal-box" style="width:560px;max-height:90vh;overflow-y:auto">
     <h2>🎚 Calidad y velocidad</h2>
-    <p class="sub">Calidad JPEG, FPS del live y resolución máxima. <strong>Calidad ↔ Ancho</strong> se sincronizan; mueve el segundo si quieres una combinación distinta. <strong>Cliente</strong> manda sobre <strong>categoría</strong>, y categoría sobre <strong>global</strong>.</p>
+    <p class="sub">Tres contextos independientes. <strong>Cliente</strong> manda sobre <strong>categoría</strong>, y categoría sobre <strong>global</strong>.</p>
     <div class="q-tabs">
       <button class="q-tab active" data-scope="global"   onclick="qualitySetScope('global')">Global</button>
       <button class="q-tab"        data-scope="category" onclick="qualitySetScope('category')">Categoría</button>
@@ -755,13 +764,32 @@ body {
     <div id="q-target-row" style="display:none">
       <select id="q-target" class="q-target" onchange="qualityLoadCurrent()"></select>
     </div>
-    <div class="q-row"><span>Calidad JPEG <span id="q-jpeg-tag" class="q-current-tag" style="display:none">heredado</span></span><span><span class="q-val" id="q-jpeg-val">70</span> / 100</span></div>
-    <input type="range" id="q-jpeg" class="q-slider" min="10" max="100" value="70">
-    <div class="q-row"><span>FPS (live) <span id="q-fps-tag" class="q-current-tag" style="display:none">heredado</span></span><span><span class="q-val" id="q-fps-val">10</span></span></div>
-    <input type="range" id="q-fps" class="q-slider" min="1" max="15" value="10">
-    <div class="q-row"><span>Ancho máx <span id="q-w-tag" class="q-current-tag" style="display:none">heredado</span></span><span><span class="q-val" id="q-w-val">Original</span></span></div>
-    <input type="range" id="q-w" class="q-slider" min="0" max="6" step="1" value="0">
-    <p class="q-hint">El cliente persiste estos valores localmente y los aplica al instante (live + capturas periódicas). Vacío en este scope = se hereda.</p>
+
+    <div class="q-section">
+      <h3 class="q-section-title">📦 ZIP local del alumno <span class="q-section-hint">PNG sin pérdida</span></h3>
+      <div class="q-row"><span>Ancho máx <span id="q-arch-w-tag" class="q-current-tag" style="display:none">heredado</span></span><span><span class="q-val" id="q-arch-w-val">Original</span></span></div>
+      <input type="range" id="q-arch-w" class="q-slider" min="0" max="6" step="1" value="0">
+    </div>
+
+    <div class="q-section">
+      <h3 class="q-section-title">🖼️ Panel <span class="q-section-hint">capturas periódicas (JPEG)</span></h3>
+      <div class="q-row"><span>Calidad JPEG <span id="q-pan-j-tag" class="q-current-tag" style="display:none">heredado</span></span><span><span class="q-val" id="q-pan-j-val">70</span> / 100</span></div>
+      <input type="range" id="q-pan-j" class="q-slider" min="10" max="100" value="70">
+      <div class="q-row"><span>Ancho máx <span id="q-pan-w-tag" class="q-current-tag" style="display:none">heredado</span></span><span><span class="q-val" id="q-pan-w-val">1280px</span></span></div>
+      <input type="range" id="q-pan-w" class="q-slider" min="0" max="6" step="1" value="4">
+    </div>
+
+    <div class="q-section">
+      <h3 class="q-section-title">🎥 Live <span class="q-section-hint">streaming en tiempo real (JPEG)</span></h3>
+      <div class="q-row"><span>Calidad JPEG <span id="q-liv-j-tag" class="q-current-tag" style="display:none">heredado</span></span><span><span class="q-val" id="q-liv-j-val">55</span> / 100</span></div>
+      <input type="range" id="q-liv-j" class="q-slider" min="10" max="100" value="55">
+      <div class="q-row"><span>Ancho máx <span id="q-liv-w-tag" class="q-current-tag" style="display:none">heredado</span></span><span><span class="q-val" id="q-liv-w-val">720px</span></span></div>
+      <input type="range" id="q-liv-w" class="q-slider" min="0" max="6" step="1" value="2">
+      <div class="q-row"><span>FPS <span id="q-liv-f-tag" class="q-current-tag" style="display:none">heredado</span></span><span><span class="q-val" id="q-liv-f-val">10</span></span></div>
+      <input type="range" id="q-liv-f" class="q-slider" min="1" max="15" value="10">
+    </div>
+
+    <p class="q-hint">Dentro de Panel/Live, Calidad ↔ Ancho se sincronizan (mueve el segundo si quieres una combinación distinta). Vacío en este scope = se hereda del nivel superior.</p>
     <div class="modal-actions">
       <button onclick="closeModal('modal-quality')">Cancelar</button>
       <button onclick="qualityResetScope()" title="Borra los ajustes de este scope (los clientes vuelven a heredar)">Resetear scope</button>
@@ -1435,6 +1463,21 @@ function qWidthLabel(w) { return w === 0 ? 'Original' : `${w}px`; }
 let qScope = 'global';
 let qStateCache = null;
 
+const Q_DEFAULTS = {
+    archive: { maxWidth: 0 },
+    panel:   { jpegQuality: 70, maxWidth: 1280 },
+    live:    { jpegQuality: 55, maxWidth: 720, fps: 10 }
+};
+// Field → DOM ids per context (slider / value display / heredado tag)
+const Q_FIELDS = [
+    { ctx: 'archive', key: 'maxWidth',    sliderId: 'q-arch-w', valId: 'q-arch-w-val', tagId: 'q-arch-w-tag', kind: 'width'  },
+    { ctx: 'panel',   key: 'jpegQuality', sliderId: 'q-pan-j',  valId: 'q-pan-j-val',  tagId: 'q-pan-j-tag',  kind: 'number' },
+    { ctx: 'panel',   key: 'maxWidth',    sliderId: 'q-pan-w',  valId: 'q-pan-w-val',  tagId: 'q-pan-w-tag',  kind: 'width'  },
+    { ctx: 'live',    key: 'jpegQuality', sliderId: 'q-liv-j',  valId: 'q-liv-j-val',  tagId: 'q-liv-j-tag',  kind: 'number' },
+    { ctx: 'live',    key: 'maxWidth',    sliderId: 'q-liv-w',  valId: 'q-liv-w-val',  tagId: 'q-liv-w-tag',  kind: 'width'  },
+    { ctx: 'live',    key: 'fps',         sliderId: 'q-liv-f',  valId: 'q-liv-f-val',  tagId: 'q-liv-f-tag',  kind: 'number' }
+];
+
 async function openQuality(presetScope, presetTarget) {
     qScope = presetScope || 'global';
     document.querySelectorAll('.q-tab').forEach(t => t.classList.toggle('active', t.dataset.scope === qScope));
@@ -1477,73 +1520,129 @@ function qualityRebuildTargets(presetTarget) {
     if (presetTarget) sel.value = presetTarget;
 }
 
+function qualityCurrentScopeOwn() {
+    if (!qStateCache) return {};
+    if (qScope === 'global') return qStateCache.global || {};
+    const t = document.getElementById('q-target').value;
+    if (qScope === 'category') return (qStateCache.byCategory || {})[t] || {};
+    if (qScope === 'client')   return (qStateCache.byClient   || {})[t] || {};
+    return {};
+}
+
+// Cascade resolver: returns {value, isOwn} for the (ctx, key) pair, walking
+// global → category → client. If nothing has it set, returns the default.
+function qualityResolve(ctx, key) {
+    const own = qualityCurrentScopeOwn();
+    if (own[ctx]?.[key] != null) return { value: own[ctx][key], isOwn: true };
+    if (qScope === 'client') {
+        const cid = document.getElementById('q-target').value;
+        const c = clients.find(c => c.clientId === cid);
+        const cat = c?.categoryMain;
+        if (cat && qStateCache.byCategory?.[cat]?.[ctx]?.[key] != null) {
+            return { value: qStateCache.byCategory[cat][ctx][key], isOwn: false };
+        }
+    }
+    if (qScope !== 'global' && qStateCache.global?.[ctx]?.[key] != null) {
+        return { value: qStateCache.global[ctx][key], isOwn: false };
+    }
+    return { value: Q_DEFAULTS[ctx][key], isOwn: false };
+}
+
 function qualityLoadCurrent() {
     if (!qStateCache) return;
-    let cur = {};
-    if (qScope === 'global') cur = qStateCache.global || {};
-    else if (qScope === 'category') cur = (qStateCache.byCategory || {})[document.getElementById('q-target').value] || {};
-    else if (qScope === 'client')   cur = (qStateCache.byClient   || {})[document.getElementById('q-target').value] || {};
-
-    const j = (cur.jpegQuality != null) ? cur.jpegQuality : 70;
-    const f = (cur.fps         != null) ? cur.fps         : 10;
-    const w = (cur.maxWidth    != null) ? cur.maxWidth    : 0;
-    document.getElementById('q-jpeg').value = j; document.getElementById('q-jpeg-val').textContent = j;
-    document.getElementById('q-fps').value  = f; document.getElementById('q-fps-val').textContent  = f;
-    const idx = Math.max(0, Q_WIDTHS.indexOf(w));
-    document.getElementById('q-w').value = idx; document.getElementById('q-w-val').textContent = qWidthLabel(Q_WIDTHS[idx]);
-    // Show "heredado" tag when this scope hasn't set the field
-    document.getElementById('q-jpeg-tag').style.display = (cur.jpegQuality == null) ? '' : 'none';
-    document.getElementById('q-fps-tag').style.display  = (cur.fps         == null) ? '' : 'none';
-    document.getElementById('q-w-tag').style.display    = (cur.maxWidth    == null) ? '' : 'none';
+    for (const f of Q_FIELDS) {
+        const { value, isOwn } = qualityResolve(f.ctx, f.key);
+        const slider = document.getElementById(f.sliderId);
+        const valEl  = document.getElementById(f.valId);
+        const tagEl  = document.getElementById(f.tagId);
+        if (f.kind === 'width') {
+            const idx = Math.max(0, Q_WIDTHS.indexOf(value));
+            slider.value = idx;
+            valEl.textContent = qWidthLabel(Q_WIDTHS[idx]);
+        } else {
+            slider.value = value;
+            valEl.textContent = value;
+        }
+        tagEl.style.display = isOwn ? 'none' : '';
+    }
 }
 
-// Coupling Calidad ↔ Ancho. JPEG y resolución son aspectos de la misma
-// "calidad visual": no tiene sentido jpeg=100 con ancho=480. Cuando el
-// usuario mueve uno, el otro se sincroniza. Para desacoplar manualmente
-// basta con mover el segundo slider después.
+// Coupling Calidad ↔ Ancho dentro de panel y de live (mismo concepto de
+// "calidad visual"). Mover uno sincroniza el otro. Para desacoplar, mueve
+// el segundo slider después; un flag _qSyncing evita el ping-pong.
 function jpegToWidthIdx(j) {
-    if (j >= 95) return 0;  // Original
-    if (j >= 85) return 6;  // 1920
-    if (j >= 75) return 5;  // 1600
-    if (j >= 60) return 4;  // 1280
-    if (j >= 45) return 3;  // 960
-    if (j >= 30) return 2;  // 720
-    return 1;               // 480
+    if (j >= 95) return 0;
+    if (j >= 85) return 6;
+    if (j >= 75) return 5;
+    if (j >= 60) return 4;
+    if (j >= 45) return 3;
+    if (j >= 30) return 2;
+    return 1;
 }
 function widthIdxToJpeg(idx) { return [100, 20, 35, 55, 70, 80, 90][idx] ?? 80; }
-function setJpegSlider(v) {
-    document.getElementById('q-jpeg').value = v;
-    document.getElementById('q-jpeg-val').textContent = v;
-    document.getElementById('q-jpeg-tag').style.display = 'none';
+
+function bindNumberSlider(id, valId, tagId) {
+    document.getElementById(id).addEventListener('input', e => {
+        document.getElementById(valId).textContent = e.target.value;
+        document.getElementById(tagId).style.display = 'none';
+    });
 }
-function setWidthSlider(idx) {
-    document.getElementById('q-w').value = idx;
-    document.getElementById('q-w-val').textContent = qWidthLabel(Q_WIDTHS[idx]);
-    document.getElementById('q-w-tag').style.display = 'none';
+function bindWidthSlider(id, valId, tagId) {
+    document.getElementById(id).addEventListener('input', e => {
+        document.getElementById(valId).textContent = qWidthLabel(Q_WIDTHS[+e.target.value]);
+        document.getElementById(tagId).style.display = 'none';
+    });
 }
-let _qSyncing = false;
-document.getElementById('q-jpeg').addEventListener('input', e => {
-    setJpegSlider(+e.target.value);
-    if (_qSyncing) return;
-    _qSyncing = true;
-    setWidthSlider(jpegToWidthIdx(+e.target.value));
-    _qSyncing = false;
-});
-document.getElementById('q-fps').addEventListener('input', e => { document.getElementById('q-fps-val').textContent = e.target.value; document.getElementById('q-fps-tag').style.display = 'none'; });
-document.getElementById('q-w').addEventListener('input', e => {
-    setWidthSlider(+e.target.value);
-    if (_qSyncing) return;
-    _qSyncing = true;
-    setJpegSlider(widthIdxToJpeg(+e.target.value));
-    _qSyncing = false;
-});
+function bindCoupledPair(jId, jValId, jTagId, wId, wValId, wTagId) {
+    let syncing = false;
+    document.getElementById(jId).addEventListener('input', e => {
+        const v = +e.target.value;
+        document.getElementById(jValId).textContent = v;
+        document.getElementById(jTagId).style.display = 'none';
+        if (syncing) return;
+        syncing = true;
+        const idx = jpegToWidthIdx(v);
+        document.getElementById(wId).value = idx;
+        document.getElementById(wValId).textContent = qWidthLabel(Q_WIDTHS[idx]);
+        document.getElementById(wTagId).style.display = 'none';
+        syncing = false;
+    });
+    document.getElementById(wId).addEventListener('input', e => {
+        const idx = +e.target.value;
+        document.getElementById(wValId).textContent = qWidthLabel(Q_WIDTHS[idx]);
+        document.getElementById(wTagId).style.display = 'none';
+        if (syncing) return;
+        syncing = true;
+        const j = widthIdxToJpeg(idx);
+        document.getElementById(jId).value = j;
+        document.getElementById(jValId).textContent = j;
+        document.getElementById(jTagId).style.display = 'none';
+        syncing = false;
+    });
+}
+// Archive: only width (no coupling, no quality)
+bindWidthSlider('q-arch-w', 'q-arch-w-val', 'q-arch-w-tag');
+// Panel: jpeg ↔ width coupled
+bindCoupledPair('q-pan-j', 'q-pan-j-val', 'q-pan-j-tag', 'q-pan-w', 'q-pan-w-val', 'q-pan-w-tag');
+// Live: jpeg ↔ width coupled, fps independent
+bindCoupledPair('q-liv-j', 'q-liv-j-val', 'q-liv-j-tag', 'q-liv-w', 'q-liv-w-val', 'q-liv-w-tag');
+bindNumberSlider('q-liv-f', 'q-liv-f-val', 'q-liv-f-tag');
 
 async function qualityApply() {
     const body = {
         scope: qScope,
-        jpegQuality: +document.getElementById('q-jpeg').value,
-        fps:         +document.getElementById('q-fps').value,
-        maxWidth:    Q_WIDTHS[+document.getElementById('q-w').value]
+        archive: {
+            maxWidth: Q_WIDTHS[+document.getElementById('q-arch-w').value]
+        },
+        panel: {
+            jpegQuality: +document.getElementById('q-pan-j').value,
+            maxWidth:    Q_WIDTHS[+document.getElementById('q-pan-w').value]
+        },
+        live: {
+            jpegQuality: +document.getElementById('q-liv-j').value,
+            maxWidth:    Q_WIDTHS[+document.getElementById('q-liv-w').value],
+            fps:         +document.getElementById('q-liv-f').value
+        }
     };
     if (qScope !== 'global') {
         body.target = document.getElementById('q-target').value;

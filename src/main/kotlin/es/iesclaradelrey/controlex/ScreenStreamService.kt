@@ -73,13 +73,13 @@ class ScreenStreamService(private val project: Project) : Disposable {
     private fun startFrameLoop() {
         frameTask?.cancel(false)
         val q = project.service<QualityConfig>()
-        val intervalMs = (1000L / q.streamFps.coerceAtLeast(1)).coerceAtLeast(50L)
+        val intervalMs = (1000L / q.liveFps.coerceAtLeast(1)).coerceAtLeast(50L)
         frameTask = scheduler.scheduleAtFixedRate({
             if (stopped) { frameTask?.cancel(false); return@scheduleAtFixedRate }
             val localWs = ws ?: return@scheduleAtFixedRate
             if (localWs.isOutputClosed) { frameTask?.cancel(false); return@scheduleAtFixedRate }
             try {
-                val jpeg = ScreenshotCapturer.captureAllScreensAsJpeg(q.jpegQualityFloat(), q.maxWidthPx)
+                val jpeg = ScreenshotCapturer.captureAllScreensAsJpeg(q.liveJpegFloat(), q.liveMaxWidth)
                 localWs.sendBinary(ByteBuffer.wrap(jpeg), true)
             } catch (_: Throwable) {}
         }, 0L, intervalMs, TimeUnit.MILLISECONDS)
