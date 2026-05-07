@@ -427,8 +427,8 @@ body {
 .hamburger.open span:nth-child(2) { opacity: 0; }
 .hamburger.open span:nth-child(3) { transform: translateY(-6px) rotate(-45deg); }
 
-/* ── Responsive: tablet (≤ 900 px) → drawer ────────────────────────────────── */
-@media (max-width: 900px) {
+/* ── Responsive: tablet (≤ 1180 px, cubre todos los iPads en landscape) → drawer ─── */
+@media (max-width: 1180px) {
   .toolbar {
     flex-wrap: nowrap;
     overflow: visible;
@@ -1339,7 +1339,7 @@ async function sendCfg() {
 }
 
 // ── Drawer (mobile/tablet hamburger menu) ─────────────────────────────────────
-function isDrawerMode() { return window.matchMedia('(max-width: 900px)').matches; }
+function isDrawerMode() { return window.matchMedia('(max-width: 1180px)').matches; }
 function openDrawer() {
     if (!isDrawerMode()) return;
     document.getElementById('tb-actions').setAttribute('data-drawer-open', 'true');
@@ -1360,7 +1360,7 @@ function toggleDrawer() {
 /** Wrap an action so that, when triggered from the drawer, it closes it. */
 function drawerAct(fn) { try { fn(); } finally { closeDrawer(); } }
 // Reset drawer state when crossing the breakpoint (avoid getting stuck open on resize)
-window.matchMedia('(max-width: 900px)').addEventListener('change', closeDrawer);
+window.matchMedia('(max-width: 1180px)').addEventListener('change', closeDrawer);
 
 // ── Quality dialog ────────────────────────────────────────────────────────────
 const Q_WIDTHS = [0, 480, 720, 960, 1280, 1600, 1920];   // 0 = original
