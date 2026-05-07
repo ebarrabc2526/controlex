@@ -224,10 +224,10 @@ function broadcast(event, data) {
 
 // ── Plugin download (public) ──────────────────────────────────────────────────
 
-const PLUGIN_ZIP = path.join(__dirname, 'public', 'controlex-2.0.0.zip');
+const PLUGIN_ZIP = path.join(__dirname, 'public', 'controlex-2.1.0.zip');
 
 app.get('/plugin', (req, res) => {
-    res.download(PLUGIN_ZIP, 'controlex-2.0.0.zip', err => {
+    res.download(PLUGIN_ZIP, 'controlex-2.1.0.zip', err => {
         if (err) res.status(404).send('Plugin no disponible');
     });
 });
