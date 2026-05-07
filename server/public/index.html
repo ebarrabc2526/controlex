@@ -153,6 +153,21 @@ body {
   cursor: pointer;
   accent-color: #1565C0;
 }
+.card-select-check {
+  position: absolute;
+  top: 6px; left: 6px;
+  width: 22px; height: 22px;
+  cursor: pointer;
+  accent-color: #ffa000;
+  background: rgba(255,255,255,.9); border-radius: 4px;
+}
+.client-card.is-selected { box-shadow: inset 0 0 0 3px #ffa000; }
+.client-card.is-hidden-shown { opacity: .55; filter: grayscale(.4); }
+.client-card.is-hidden-shown::after {
+  content: 'OCULTO'; position: absolute; top: 4px; left: 50%; transform: translateX(-50%);
+  background: rgba(0,0,0,.7); color: #fff; font-size: .62rem; padding: 1px 6px;
+  border-radius: 3px; letter-spacing: 1px; pointer-events: none;
+}
 
 .card-info {
   padding: 6px 10px;
@@ -713,10 +728,20 @@ body {
       <button class="drawer-close" aria-label="Cerrar" onclick="closeDrawer()">✕</button>
     </div>
 
+    <div class="drawer-group" data-label="Selección">
+      <button class="tb-btn" type="button" data-drawer-action="selectAll"           title="Seleccionar todos los clientes en el grid">☑ Seleccionar todos</button>
+      <button class="tb-btn" type="button" data-drawer-action="openSelectCategory"  title="Seleccionar todos los de una categoría">🏷 Por categoría…</button>
+      <button class="tb-btn" type="button" data-drawer-action="clearSelection"      title="Limpiar selección">✖ Limpiar (<span id="select-count">0</span>)</button>
+      <button class="tb-btn" type="button" data-drawer-action="selectionShow"       title="Mostrar (des-ocultar) los seleccionados">👁 Mostrar seleccionados</button>
+      <button class="tb-btn" type="button" data-drawer-action="selectionHide"       title="Ocultar los seleccionados">🙈 Ocultar seleccionados</button>
+    </div>
+
     <div class="drawer-group" data-label="Visibilidad">
-      <button class="tb-btn" type="button" data-drawer-action="showAll"          title="Mostrar todos los clientes ocultos">👁 Mostrar todos</button>
+      <button class="tb-btn" type="button" data-drawer-action="showAll"          title="Mostrar (des-ocultar) todos los clientes">👁 Mostrar todos</button>
       <button class="tb-btn" type="button" data-drawer-action="hideAll"          title="Ocultar todos los clientes">🙈 Ocultar todos</button>
-      <button class="tb-btn" type="button" id="btn-hidden-list" data-drawer-action="openHiddenModal" title="Ver lista de ocultos">📋 Ocultos (<span id="hidden-count">0</span>)</button>
+      <button class="tb-btn" type="button" data-drawer-action="showHiddenInGrid" title="Mostrar las cards ocultas en el grid (atenuadas) para poder seleccionarlas">👀 Ver ocultos</button>
+      <button class="tb-btn" type="button" data-drawer-action="hideHiddenFromGrid" title="Volver al modo normal: las ocultas no aparecen en el grid">🚫 Ocultar ocultos</button>
+      <button class="tb-btn" type="button" id="btn-hidden-list" data-drawer-action="openHiddenModal" title="Ver lista de ocultos en modal">📋 Ocultos (<span id="hidden-count">0</span>)</button>
     </div>
 
     <div class="drawer-group" data-label="Comunicación">
@@ -771,6 +796,18 @@ body {
     <div class="modal-actions">
       <button onclick="closeModal('modal-msg')">Cancelar</button>
       <button class="btn-primary" onclick="sendMsg()">Enviar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Select-by-category modal ─────────────────────────────────────────────── -->
+<div id="modal-select-cat" class="modal" style="display:none">
+  <div class="modal-box" style="width:380px">
+    <h2>🏷 Seleccionar por categoría</h2>
+    <p class="sub">Pulsa una categoría para añadir todos sus clientes a la selección actual.</p>
+    <div id="select-cat-list" style="display:flex;flex-direction:column;gap:6px;margin-top:10px"></div>
+    <div class="modal-actions">
+      <button onclick="closeModal('modal-select-cat')">Cerrar</button>
     </div>
   </div>
 </div>
@@ -901,6 +938,80 @@ function hideAll()       { for (const c of clients) hidden.add(c.clientId); pers
 function showAll()       { hidden.clear(); persistHidden(); updateHiddenCount(); render(); }
 function updateHiddenCount() { document.getElementById('hidden-count').textContent = hidden.size; }
 
+// ── Bulk selection (independent from mosaic) ──────────────────────────────────
+// `selected` is a transient set of clientIds the teacher has marked (via the
+// per-card top-left checkbox or the drawer "Seleccionar todos / por categoría").
+// It survives re-renders of the grid but is cleared on page reload.
+const selected = new Set();
+let showHiddenInGrid = false;   // when true, render hidden cards too (dimmed)
+function updateSelectCount() { document.getElementById('select-count').textContent = selected.size; }
+function toggleSelectClient(id, on) {
+    if (on) selected.add(id); else selected.delete(id);
+    updateSelectCount();
+    document.querySelectorAll(`.client-card[data-id="${CSS.escape(id)}"]`)
+        .forEach(el => el.classList.toggle('is-selected', on));
+}
+function selectAll() {
+    for (const c of clients) {
+        if (!c.online) continue;
+        if (!showHiddenInGrid && hidden.has(c.clientId)) continue;
+        selected.add(c.clientId);
+    }
+    updateSelectCount(); render();
+}
+function clearSelection() { selected.clear(); updateSelectCount(); render(); }
+function selectionShow() {
+    if (selected.size === 0) { alert('No hay clientes seleccionados.'); return; }
+    for (const id of selected) hidden.delete(id);
+    persistHidden(); updateHiddenCount(); render();
+}
+function selectionHide() {
+    if (selected.size === 0) { alert('No hay clientes seleccionados.'); return; }
+    for (const id of selected) hidden.add(id);
+    persistHidden(); updateHiddenCount(); render();
+}
+function showHiddenInGridOn()  { showHiddenInGrid = true;  render(); }
+function hideHiddenFromGrid()  { showHiddenInGrid = false; render(); }
+function openSelectCategory() {
+    const cats = new Set();
+    for (const c of clients) {
+        if (c.categoryMain) cats.add(c.categoryMain);
+        for (const x of (c.extraCategories || [])) cats.add(x);
+    }
+    const list = document.getElementById('select-cat-list');
+    list.innerHTML = '';
+    if (cats.size === 0) {
+        list.innerHTML = '<p class="sub">No hay categorías disponibles.</p>';
+    } else {
+        for (const cat of [...cats].sort()) {
+            const count = clients.filter(c =>
+                c.online &&
+                (showHiddenInGrid || !hidden.has(c.clientId)) &&
+                (c.categoryMain === cat || (c.extraCategories || []).includes(cat))
+            ).length;
+            const btn = document.createElement('button');
+            btn.className = 'tb-btn';
+            btn.style.cssText = 'background:#fff;color:#1565C0;border:1px solid #1565C0;text-align:left;padding:8px 12px;';
+            btn.innerHTML = `🏷 ${esc(cat)} <span style="float:right;color:#888;font-size:.8rem">${count}</span>`;
+            btn.onclick = () => selectCategory(cat);
+            list.appendChild(btn);
+        }
+    }
+    document.getElementById('modal-select-cat').style.display = 'flex';
+}
+function selectCategory(cat) {
+    let added = 0;
+    for (const c of clients) {
+        if (!c.online) continue;
+        if (!showHiddenInGrid && hidden.has(c.clientId)) continue;
+        if (c.categoryMain === cat || (c.extraCategories || []).includes(cat)) {
+            if (!selected.has(c.clientId)) { selected.add(c.clientId); added++; }
+        }
+    }
+    closeModal('modal-select-cat');
+    updateSelectCount(); render();
+}
+
 function openHiddenModal() {
     const hiddenClients = clients.filter(c => hidden.has(c.clientId));
     const extra = [...hidden].filter(id => !clients.find(c => c.clientId === id));
@@ -986,6 +1097,7 @@ document.addEventListener('DOMContentLoaded', () => {
     connectStream();
     setImgRefresh(3000);  // refresh thumbnails periodically (independent of state)
     updateHiddenCount();
+    updateSelectCount();
     refreshQualityBadge();
     // Version is injected server-side into #tb-ver, no fetch needed.
 });
@@ -1191,7 +1303,9 @@ function renderGrid() {
     const gc = document.getElementById('grid-container');
     // Offline clients are dropped from view automatically — they reappear when
     // the alumno's plugin starts heartbeating again.
-    const visible = clients.filter(c => !hidden.has(c.clientId) && c.online);
+    // When showHiddenInGrid is on, also include hidden ones (they render with
+    // a "OCULTO" overlay so the teacher can select+unhide in bulk).
+    const visible = clients.filter(c => c.online && (showHiddenInGrid || !hidden.has(c.clientId)));
 
     if (!visible.length) {
         gc.innerHTML = `<div class="empty-state">
@@ -1248,9 +1362,17 @@ function renderGrid() {
     gc.appendChild(frag);
 }
 
+function cardClasses(c) {
+    let cls = 'client-card';
+    if (selectedMosaic.has(c.clientId)) cls += ' selected';
+    if (selected.has(c.clientId))       cls += ' is-selected';
+    if (hidden.has(c.clientId))         cls += ' is-hidden-shown';
+    return cls;
+}
+
 function buildCard(c) {
     const el = document.createElement('div');
-    el.className = 'client-card' + (selectedMosaic.has(c.clientId) ? ' selected' : '');
+    el.className = cardClasses(c);
     el.dataset.id  = c.clientId;
     el.dataset.seq = c.seqNum;
     el.innerHTML   = cardInner(c);
@@ -1260,7 +1382,7 @@ function buildCard(c) {
 function updateCard(el, c) {
     const displayName = c.nickname || c.clientId.slice(0, 8);
     el.dataset.seq = c.seqNum;
-    el.classList.toggle('selected', selectedMosaic.has(c.clientId));
+    el.className = cardClasses(c);
     el.querySelector('.dot').className  = 'dot ' + (c.online ? 'on' : 'off');
     el.querySelector('.card-ip').textContent = displayName;
     el.querySelector('.card-ip').title = c.ip;
@@ -1268,8 +1390,10 @@ function updateCard(el, c) {
     el.querySelector('.card-info').innerHTML = infoHTML(c) +
         buildBadgesHTML(c);
     // image is refreshed independently by setImgRefresh — don't touch src here
-    const cb = el.querySelector('.mosaic-check');
-    if (cb) cb.checked = selectedMosaic.has(c.clientId);
+    const mcb = el.querySelector('.mosaic-check');
+    if (mcb) mcb.checked = selectedMosaic.has(c.clientId);
+    const scb = el.querySelector('.card-select-check');
+    if (scb) scb.checked = selected.has(c.clientId);
 }
 
 function buildBadgesHTML(c) {
@@ -1296,6 +1420,10 @@ function cardInner(c) {
   <img src="${imgUrl(c.clientId)}" alt="Captura"
        loading="lazy"
        onclick="openFull('${esc(c.clientId)}')">
+  <input class="card-select-check" type="checkbox" title="Seleccionar"
+         ${selected.has(c.clientId) ? 'checked' : ''}
+         onclick="event.stopPropagation()"
+         onchange="toggleSelectClient('${esc(c.clientId)}', this.checked)">
   <button class="card-hide-btn" title="Ocultar cliente" onclick="hideClient('${esc(c.clientId)}')">✕</button>
   <input class="mosaic-check" type="checkbox" title="Incluir en mosaico"
          ${sel ? 'checked' : ''}
@@ -1538,6 +1666,10 @@ function toggleDrawer() {
 //   3. The drawer always closes, even on error.
 const drawerActions = {
     showAll, hideAll, openHiddenModal, openQuality, pruneOffline, wipeAll,
+    selectAll, clearSelection, openSelectCategory,
+    selectionShow, selectionHide,
+    showHiddenInGrid: showHiddenInGridOn,
+    hideHiddenFromGrid,
     openMsgAll: () => openMsg('*', 'todos los clientes'),
     openCfgAll: () => openCfg('*', 'todos los clientes')
 };
