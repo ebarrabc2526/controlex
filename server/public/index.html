@@ -746,7 +746,7 @@ body {
 <div id="modal-quality" class="modal" style="display:none">
   <div class="modal-box" style="width:520px">
     <h2>🎚 Calidad y velocidad</h2>
-    <p class="sub">Calidad JPEG, FPS del live y resolución máxima. <strong>Cliente</strong> manda sobre <strong>categoría</strong>, y categoría sobre <strong>global</strong>.</p>
+    <p class="sub">Calidad JPEG, FPS del live y resolución máxima. <strong>Calidad ↔ Ancho</strong> se sincronizan; mueve el segundo si quieres una combinación distinta. <strong>Cliente</strong> manda sobre <strong>categoría</strong>, y categoría sobre <strong>global</strong>.</p>
     <div class="q-tabs">
       <button class="q-tab active" data-scope="global"   onclick="qualitySetScope('global')">Global</button>
       <button class="q-tab"        data-scope="category" onclick="qualitySetScope('category')">Categoría</button>
@@ -1497,9 +1497,46 @@ function qualityLoadCurrent() {
     document.getElementById('q-w-tag').style.display    = (cur.maxWidth    == null) ? '' : 'none';
 }
 
-document.getElementById('q-jpeg').addEventListener('input', e => { document.getElementById('q-jpeg-val').textContent = e.target.value; document.getElementById('q-jpeg-tag').style.display = 'none'; });
-document.getElementById('q-fps') .addEventListener('input', e => { document.getElementById('q-fps-val') .textContent = e.target.value; document.getElementById('q-fps-tag') .style.display = 'none'; });
-document.getElementById('q-w')   .addEventListener('input', e => { document.getElementById('q-w-val')   .textContent = qWidthLabel(Q_WIDTHS[+e.target.value]); document.getElementById('q-w-tag').style.display = 'none'; });
+// Coupling Calidad ↔ Ancho. JPEG y resolución son aspectos de la misma
+// "calidad visual": no tiene sentido jpeg=100 con ancho=480. Cuando el
+// usuario mueve uno, el otro se sincroniza. Para desacoplar manualmente
+// basta con mover el segundo slider después.
+function jpegToWidthIdx(j) {
+    if (j >= 95) return 0;  // Original
+    if (j >= 85) return 6;  // 1920
+    if (j >= 75) return 5;  // 1600
+    if (j >= 60) return 4;  // 1280
+    if (j >= 45) return 3;  // 960
+    if (j >= 30) return 2;  // 720
+    return 1;               // 480
+}
+function widthIdxToJpeg(idx) { return [100, 20, 35, 55, 70, 80, 90][idx] ?? 80; }
+function setJpegSlider(v) {
+    document.getElementById('q-jpeg').value = v;
+    document.getElementById('q-jpeg-val').textContent = v;
+    document.getElementById('q-jpeg-tag').style.display = 'none';
+}
+function setWidthSlider(idx) {
+    document.getElementById('q-w').value = idx;
+    document.getElementById('q-w-val').textContent = qWidthLabel(Q_WIDTHS[idx]);
+    document.getElementById('q-w-tag').style.display = 'none';
+}
+let _qSyncing = false;
+document.getElementById('q-jpeg').addEventListener('input', e => {
+    setJpegSlider(+e.target.value);
+    if (_qSyncing) return;
+    _qSyncing = true;
+    setWidthSlider(jpegToWidthIdx(+e.target.value));
+    _qSyncing = false;
+});
+document.getElementById('q-fps').addEventListener('input', e => { document.getElementById('q-fps-val').textContent = e.target.value; document.getElementById('q-fps-tag').style.display = 'none'; });
+document.getElementById('q-w').addEventListener('input', e => {
+    setWidthSlider(+e.target.value);
+    if (_qSyncing) return;
+    _qSyncing = true;
+    setJpegSlider(widthIdxToJpeg(+e.target.value));
+    _qSyncing = false;
+});
 
 async function qualityApply() {
     const body = {
