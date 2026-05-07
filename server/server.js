@@ -270,28 +270,108 @@ function broadcast(event, data) {
     }
 }
 
-// ── Plugin download (public) ──────────────────────────────────────────────────
+// ── Plugin distribution (public) ──────────────────────────────────────────────
 
-const PLUGIN_ZIP = path.join(__dirname, 'public', 'controlex-2.3.7.zip');
-const VERSION = (path.basename(PLUGIN_ZIP).match(/controlex-([\d.]+)\.zip/) || [, '?'])[1];
+const PUBLIC_DIR = path.join(__dirname, 'public');
+const ZIP_RE = /^controlex-([\d.]+)\.zip$/;
 
+function semverCompare(a, b) {
+    const pa = a.split('.').map(Number);
+    const pb = b.split('.').map(Number);
+    for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+        const da = pa[i] || 0, db = pb[i] || 0;
+        if (da !== db) return da - db;
+    }
+    return 0;
+}
+
+function listVersions() {
+    return fs.readdirSync(PUBLIC_DIR)
+        .map(f => { const m = f.match(ZIP_RE); return m ? { file: f, version: m[1] } : null; })
+        .filter(Boolean)
+        .sort((a, b) => semverCompare(b.version, a.version));
+}
+
+function currentVersion() {
+    const list = listVersions();
+    return list[0] ? list[0].version : '0.0.0';
+}
+
+const GITHUB_REPO = 'ebarrabc2526/controlex';
+const _releaseCache = new Map(); // tag → { data, expiresAt }
+const RELEASE_TTL_MS = 10 * 60 * 1000;
+
+async function fetchReleaseByTag(version) {
+    const tag = `v${version}`;
+    const cached = _releaseCache.get(tag);
+    if (cached && Date.now() < cached.expiresAt) return cached.data;
+    try {
+        const r = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases/tags/${tag}`, {
+            headers: { 'User-Agent': 'controlex-server', 'Accept': 'application/vnd.github+json' },
+            signal: AbortSignal.timeout(5000),
+        });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const j = await r.json();
+        const data = { tag, name: j.name || tag, body: j.body || '' };
+        _releaseCache.set(tag, { data, expiresAt: Date.now() + RELEASE_TTL_MS });
+        return data;
+    } catch (e) {
+        console.warn(`[controlex] release fetch ${tag} failed:`, e.message);
+        return cached ? cached.data : null;
+    }
+}
+
+function escapeHTML(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// Minimal markdown subset: ## headings, - lists, `code`, **bold**, [text](url), paragraphs.
+function renderMarkdown(md) {
+    if (!md) return '';
+    const lines = escapeHTML(md).replace(/\r\n/g, '\n').split('\n');
+    const blocks = [];
+    let buf = [];
+    const flush = () => { if (buf.length) { blocks.push(buf.join('\n')); buf = []; } };
+    for (const ln of lines) (ln.trim() === '' ? flush() : buf.push(ln));
+    flush();
+    const inline = s => s
+        .replace(/\\([`*\[\]()_~])/g, '$1')
+        .replace(/`([^`]+)`/g, '<code>$1</code>')
+        .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+        .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+    return blocks.map(blk => {
+        const ls = blk.split('\n');
+        if (ls.every(l => /^\s*-\s+/.test(l))) {
+            return '<ul>' + ls.map(l => `<li>${inline(l.replace(/^\s*-\s+/, ''))}</li>`).join('') + '</ul>';
+        }
+        if (ls[0].startsWith('### ')) return `<h4>${inline(ls[0].slice(4))}</h4>`;
+        if (ls[0].startsWith('## '))  return `<h3>${inline(ls[0].slice(3))}</h3>`;
+        if (ls[0].startsWith('# '))   return `<h2>${inline(ls[0].slice(2))}</h2>`;
+        return `<p>${inline(ls.join('<br>'))}</p>`;
+    }).join('\n');
+}
+
+// Legacy: /plugin (used by IntelliJ via updatePlugins.xml). Always serves the latest.
 app.get('/plugin', (req, res) => {
-    res.download(PLUGIN_ZIP, 'controlex-2.3.7.zip', err => {
+    const v = currentVersion();
+    res.download(path.join(PUBLIC_DIR, `controlex-${v}.zip`), `controlex-${v}.zip`, err => {
         if (err) res.status(404).send('Plugin no disponible');
     });
 });
 
-app.get('/api/version', (req, res) => res.json({ version: VERSION }));
+app.get('/api/version', (req, res) => res.json({ version: currentVersion() }));
 
 // IntelliJ custom plugin repository: add this URL in
 //   Settings → Plugins → ⚙ → Manage Plugin Repositories…
 // IntelliJ will poll it at startup and when the user runs "Check for updates".
 app.get('/updatePlugins.xml', (req, res) => {
+    const v = currentVersion();
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <plugins>
     <plugin id="es.iesclaradelrey.controlex"
             url="https://controlex.ebarrab.com/plugin"
-            version="${VERSION}">
+            version="${v}">
         <name>Controlex</name>
         <vendor email="ebarrabc2526@gmail.com" url="https://iesclaradelrey.es">IES Clara del Rey</vendor>
         <idea-version since-build="242"/>
@@ -303,6 +383,122 @@ app.get('/updatePlugins.xml', (req, res) => {
     res.set('Cache-Control', 'no-store');
     res.send(xml);
 });
+
+// Public landing page (proxied at https://ebarrab.com/controlex)
+app.get('/controlex', async (req, res) => {
+    const versions = listVersions();
+    const release = versions[0] ? await fetchReleaseByTag(versions[0].version) : null;
+    res.set('Cache-Control', 'no-store');
+    res.set('Content-Type', 'text/html; charset=utf-8');
+    res.send(renderLanding(versions, release));
+});
+
+app.get('/controlex/download/:version', (req, res) => {
+    const v = req.params.version;
+    if (!/^[\d.]+$/.test(v)) return res.status(400).send('Versión inválida');
+    const fp = path.join(PUBLIC_DIR, `controlex-${v}.zip`);
+    if (!fs.existsSync(fp)) return res.status(404).send('Versión no encontrada');
+    res.download(fp, `controlex-${v}.zip`);
+});
+
+function renderLanding(versions, release) {
+    const current = versions[0] || { version: '?' };
+    const recent = versions.slice(1, 6);
+    const older = versions.slice(6);
+    const ghTag = v => `https://github.com/${GITHUB_REPO}/releases/tag/v${v}`;
+    const item = v => `<li><span>v${v.version}</span><span class="row-actions"><a href="${ghTag(v.version)}" target="_blank" rel="noopener">Notas</a> · <a href="/controlex/download/${v.version}">Descargar</a></span></li>`;
+    const REPO_URL = 'https://controlex.ebarrab.com/updatePlugins.xml';
+    const releaseHTML = release && release.body
+        ? `<div class="release-notes">${renderMarkdown(release.body)}<p class="meta"><a href="${ghTag(current.version)}" target="_blank" rel="noopener">Ver en GitHub →</a></p></div>`
+        : `<p class="meta">Notas no disponibles. <a href="${ghTag(current.version)}" target="_blank" rel="noopener">Ver en GitHub →</a></p>`;
+    return `<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Controlex — Plugin para IntelliJ IDEA</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; max-width: 760px; margin: 2rem auto; padding: 0 1rem; line-height: 1.55; color: #222; }
+  h1 { font-size: 1.9rem; margin: 0 0 0.2rem; }
+  h2 { margin-top: 2.2rem; border-bottom: 1px solid #e5e5e5; padding-bottom: 0.3rem; font-size: 1.2rem; }
+  p.lead { color: #555; }
+  code { background: #f3f3f3; padding: 0.1em 0.4em; border-radius: 3px; font-size: 0.92em; }
+  ol { padding-left: 1.4rem; }
+  ol li { margin-bottom: 0.5rem; }
+  .download-btn { display: inline-block; padding: 0.85rem 1.5rem; background: #2563eb; color: white !important; text-decoration: none; border-radius: 6px; font-weight: 600; }
+  .download-btn:hover { background: #1d4ed8; }
+  .meta { font-size: 0.9rem; color: #777; margin-left: 0.7rem; }
+  .repo-url { background: #f3f3f3; padding: 0.6rem 0.8rem; border-radius: 4px; font-family: ui-monospace, monospace; word-break: break-all; display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin: 0.3rem 0; }
+  .copy-btn { font-size: 0.8rem; padding: 0.25rem 0.7rem; background: white; border: 1px solid #ddd; border-radius: 3px; cursor: pointer; flex-shrink: 0; }
+  .copy-btn:hover { background: #f7f7f7; }
+  ul.versions { list-style: none; padding: 0; }
+  ul.versions li { padding: 0.45rem 0.2rem; border-bottom: 1px solid #f0f0f0; display: flex; justify-content: space-between; }
+  .row-actions { font-size: 0.92rem; }
+  .release-notes { background: #fafafa; border: 1px solid #eee; border-radius: 6px; padding: 0.8rem 1.2rem; margin-top: 0.6rem; }
+  .release-notes h2 { font-size: 1.05rem; margin: 1rem 0 0.4rem; border-bottom: none; padding-bottom: 0; }
+  .release-notes h3 { font-size: 1rem; margin: 0.9rem 0 0.3rem; color: #333; }
+  .release-notes h4 { font-size: 0.95rem; margin: 0.7rem 0 0.2rem; color: #555; }
+  .release-notes ul { padding-left: 1.3rem; }
+  .release-notes li { margin: 0.2rem 0; }
+  .release-notes p { margin: 0.5rem 0; }
+  ul.versions a { color: #2563eb; text-decoration: none; }
+  ul.versions a:hover { text-decoration: underline; }
+  details { margin-top: 0.8rem; }
+  summary { cursor: pointer; color: #555; padding: 0.3rem 0; }
+  .footer { margin-top: 3rem; color: #888; font-size: 0.85rem; text-align: center; }
+  .footer a { color: #888; }
+</style>
+</head>
+<body>
+<h1>Controlex</h1>
+<p class="lead">Plugin de control para exámenes de programación Java en IntelliJ IDEA.</p>
+
+<h2>Descarga</h2>
+<a class="download-btn" href="/controlex/download/${current.version}">⬇ Descargar v${current.version}</a>
+<span class="meta">.zip · IntelliJ IDEA 2024.2+</span>
+
+<h2>Novedades de v${current.version}</h2>
+${releaseHTML}
+
+<h2>Auto-actualización (recomendado)</h2>
+<p>Configura el repositorio personalizado en IntelliJ y olvídate de descargar manualmente:</p>
+<ol>
+  <li>En IntelliJ: <code>Settings</code> → <code>Plugins</code> → ⚙ → <code>Manage Plugin Repositories…</code></li>
+  <li>Pulsa <code>+</code> y añade esta URL:
+    <div class="repo-url"><span id="repoUrl">${REPO_URL}</span><button class="copy-btn" onclick="copyRepoUrl(this)">Copiar</button></div>
+  </li>
+  <li><code>OK</code> → <code>Apply</code>. IntelliJ comprobará nuevas versiones al iniciar y al pulsar <code>Check for updates</code>.</li>
+  <li>Si es la primera vez, instala el plugin desde el Marketplace (busca "Controlex") o usa la instalación manual de abajo.</li>
+</ol>
+
+<h2>Instalación manual desde ZIP</h2>
+<ol>
+  <li>Descarga el ZIP del botón de arriba.</li>
+  <li>En IntelliJ: <code>Settings</code> → <code>Plugins</code> → ⚙ → <code>Install Plugin from Disk…</code></li>
+  <li>Selecciona el ZIP descargado y reinicia IntelliJ.</li>
+</ol>
+
+<h2>Versiones anteriores</h2>
+${recent.length ? `<ul class="versions">${recent.map(item).join('')}</ul>` : '<p class="meta">No hay versiones anteriores recientes.</p>'}
+${older.length ? `<details><summary>Ver todas las versiones (${older.length} más)</summary><ul class="versions">${older.map(item).join('')}</ul></details>` : ''}
+
+<div class="footer">
+  Controlex · IES Clara del Rey · <a href="https://github.com/ebarrabc2526/controlex/releases">Notas de cada versión</a>
+</div>
+
+<script>
+function copyRepoUrl(btn) {
+  const url = document.getElementById('repoUrl').textContent;
+  navigator.clipboard.writeText(url).then(() => {
+    const old = btn.textContent;
+    btn.textContent = '✓ Copiado';
+    setTimeout(() => btn.textContent = old, 2000);
+  });
+}
+</script>
+</body>
+</html>`;
+}
 
 // ── Auth middleware for client uploads ────────────────────────────────────────
 
