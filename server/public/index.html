@@ -1664,7 +1664,7 @@ function qualityFormatChanged(ctx) {
     if (jRow) jRow.classList.toggle('is-disabled', isPng);
 }
 
-function qualityMaxQuality() {
+async function qualityMaxQuality() {
     // Archive (PNG always, here we just push width to Original)
     document.getElementById('q-arch-w').value = 6;
     document.getElementById('q-arch-w-val').textContent = qWidthLabel(Q_WIDTHS[6]);
@@ -1681,6 +1681,7 @@ function qualityMaxQuality() {
     document.getElementById('q-liv-w-val').textContent = qWidthLabel(Q_WIDTHS[6]);
     document.getElementById('q-liv-w-tag').style.display = 'none';
     qualityFormatChanged('live');
+    await qualityApply();
 }
 
 // Coupling Calidad ↔ Ancho dentro de panel y de live (mismo concepto de
