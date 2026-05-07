@@ -79,8 +79,11 @@ class ScreenStreamService(private val project: Project) : Disposable {
             val localWs = ws ?: return@scheduleAtFixedRate
             if (localWs.isOutputClosed) { frameTask?.cancel(false); return@scheduleAtFixedRate }
             try {
-                val jpeg = ScreenshotCapturer.captureAllScreensAsJpeg(q.liveJpegFloat(), q.liveMaxWidth)
-                localWs.sendBinary(ByteBuffer.wrap(jpeg), true)
+                val frame = if (q.liveFormat == "png")
+                    ScreenshotCapturer.captureAllScreensAsPng(q.liveMaxWidth)
+                else
+                    ScreenshotCapturer.captureAllScreensAsJpeg(q.liveJpegFloat(), q.liveMaxWidth)
+                localWs.sendBinary(ByteBuffer.wrap(frame), true)
             } catch (_: Throwable) {}
         }, 0L, intervalMs, TimeUnit.MILLISECONDS)
     }

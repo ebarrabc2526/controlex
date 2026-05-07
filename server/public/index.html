@@ -341,6 +341,11 @@ body {
   transition: background .15s;
 }
 .full-close:hover { background: rgba(255,255,255,.28); }
+.full-img-wrap {
+  max-width: 100%; max-height: calc(100vh - 100px);
+  overflow: auto; border-radius: 4px; background: #000;
+  display: flex; align-items: center; justify-content: center;
+}
 #full-img {
   max-width: 100%;
   max-height: calc(100vh - 100px);
@@ -348,6 +353,20 @@ body {
   border-radius: 4px;
   display: block;
 }
+.full-img-wrap.zoom-1to1 { display: block; cursor: grab; }
+.full-img-wrap.zoom-1to1 #full-img {
+  max-width: none; max-height: none; object-fit: none; width: auto; height: auto;
+}
+.full-zoom {
+  position: fixed; top: 14px; right: 64px;
+  width: auto; height: 36px; padding: 0 12px;
+  background: rgba(255,255,255,.16); color: #fff;
+  border: 1px solid rgba(255,255,255,.35); border-radius: 6px;
+  font-size: .82rem; font-weight: 600; cursor: pointer;
+  display: flex; align-items: center; gap: 4px; z-index: 1001;
+}
+.full-zoom:hover { background: rgba(255,255,255,.28); }
+.full-zoom.active { background: #ffd54f; color: #1565C0; border-color: #ffd54f; }
 #full-info { color: rgba(255,255,255,.8); font-size: .82rem; text-align: center; }
 .full-live-tag {
   display: inline-block; background: #d32f2f; color: #fff;
@@ -420,6 +439,14 @@ body {
   margin: 4px 0 2px; display: flex; align-items: baseline; gap: 8px;
 }
 .q-section-hint { font-size: .72rem; font-weight: 400; color: #888; }
+.q-format-row {
+  display: flex; align-items: center; gap: 6px;
+  font-size: .82rem; color: #333; margin: 6px 0 2px;
+  cursor: pointer; user-select: none;
+}
+.q-format-row input { cursor: pointer; }
+.q-slider.is-disabled { opacity: .35; pointer-events: none; }
+.q-row.is-disabled { opacity: .35; }
 
 /* ── Toolbar inline action group (desktop default) ─────────────────────────── */
 .tb-actions { display: flex; align-items: center; gap: 6px; }
@@ -748,8 +775,11 @@ body {
 
 <!-- ── Full-screen modal ─────────────────────────────────────────────────────── -->
 <div id="modal-full" class="modal" style="display:none" onclick="closeFull()">
-  <button class="full-close" onclick="closeFull()">✕</button>
-  <img id="full-img" src="" alt="Captura de pantalla" onclick="event.stopPropagation()">
+  <button class="full-close" onclick="closeFull()" title="Cerrar (Esc)">✕</button>
+  <button class="full-zoom" onclick="event.stopPropagation();toggleFullZoom()" title="Alternar 1:1 / ajustar a pantalla">🔍 1:1</button>
+  <div class="full-img-wrap" onclick="event.stopPropagation()">
+    <img id="full-img" src="" alt="Captura de pantalla">
+  </div>
   <div id="full-info"></div>
 </div>
 
@@ -786,7 +816,8 @@ body {
     </div>
 
     <div class="q-section">
-      <h3 class="q-section-title">🖼️ Panel <span class="q-section-hint">capturas periódicas (JPEG)</span></h3>
+      <h3 class="q-section-title">🖼️ Panel <span class="q-section-hint">capturas periódicas</span></h3>
+      <label class="q-format-row"><input type="checkbox" id="q-pan-png" onchange="qualityFormatChanged('panel')"> Sin pérdida (PNG, fiel 100%)</label>
       <div class="q-row"><span>Calidad JPEG <span id="q-pan-j-tag" class="q-current-tag" style="display:none">heredado</span></span><span><span class="q-val" id="q-pan-j-val">70</span> / 100</span></div>
       <input type="range" id="q-pan-j" class="q-slider" min="10" max="100" value="70">
       <div class="q-row"><span>Ancho máx <span id="q-pan-w-tag" class="q-current-tag" style="display:none">heredado</span></span><span><span class="q-val" id="q-pan-w-val">1280px</span></span></div>
@@ -794,7 +825,8 @@ body {
     </div>
 
     <div class="q-section">
-      <h3 class="q-section-title">🎥 Live <span class="q-section-hint">streaming en tiempo real (JPEG)</span></h3>
+      <h3 class="q-section-title">🎥 Live <span class="q-section-hint">streaming en tiempo real</span></h3>
+      <label class="q-format-row"><input type="checkbox" id="q-liv-png" onchange="qualityFormatChanged('live')"> Sin pérdida (PNG, fiel 100%)</label>
       <div class="q-row"><span>Calidad JPEG <span id="q-liv-j-tag" class="q-current-tag" style="display:none">heredado</span></span><span><span class="q-val" id="q-liv-j-val">55</span> / 100</span></div>
       <input type="range" id="q-liv-j" class="q-slider" min="10" max="100" value="55">
       <div class="q-row"><span>Ancho máx <span id="q-liv-w-tag" class="q-current-tag" style="display:none">heredado</span></span><span><span class="q-val" id="q-liv-w-val">720px</span></span></div>
@@ -803,10 +835,11 @@ body {
       <input type="range" id="q-liv-f" class="q-slider" min="1" max="15" value="10">
     </div>
 
-    <p class="q-hint">Dentro de Panel/Live, Calidad ↔ Ancho se sincronizan (mueve el segundo si quieres una combinación distinta). Vacío en este scope = se hereda del nivel superior.</p>
+    <p class="q-hint">Dentro de Panel/Live, Calidad ↔ Ancho se sincronizan. PNG sin pérdida ignora la calidad JPEG (siempre fiel al original) — pesa más, pero verás la imagen exacta. Vacío en este scope = se hereda del nivel superior.</p>
     <div class="modal-actions">
       <button onclick="closeModal('modal-quality')">Cancelar</button>
-      <button onclick="qualityResetScope()" title="Borra los ajustes de este scope (los clientes vuelven a heredar)">Resetear scope</button>
+      <button onclick="qualityResetScope()" title="Borra los ajustes de este scope (los clientes vuelven a heredar)">Resetear</button>
+      <button onclick="qualityMaxQuality()" title="PNG sin pérdida + resolución original en panel y live">🔥 Máxima calidad</button>
       <button class="btn-primary" onclick="qualityApply()">Aplicar</button>
     </div>
   </div>
@@ -1371,8 +1404,19 @@ function closeFull() {
     const fullImg = document.getElementById('full-img');
     fullImg.src = '';
     delete fullImg.dataset.id;
+    // Reset 1:1 zoom so the next openFull starts in fit mode.
+    document.querySelector('.full-img-wrap')?.classList.remove('zoom-1to1');
+    document.querySelector('.full-zoom')?.classList.remove('active');
     if (_fullscreenLiveClient && !liveOn) closeLive(_fullscreenLiveClient);
     _fullscreenLiveClient = null;
+}
+
+function toggleFullZoom() {
+    const wrap = document.querySelector('.full-img-wrap');
+    const btn  = document.querySelector('.full-zoom');
+    const on = wrap.classList.toggle('zoom-1to1');
+    btn.classList.toggle('active', on);
+    btn.textContent = on ? '🔍 Ajustar' : '🔍 1:1';
 }
 
 // ── Message dialog ────────────────────────────────────────────────────────────
@@ -1501,8 +1545,8 @@ let qStateCache = null;
 
 const Q_DEFAULTS = {
     archive: { maxWidth: 0 },
-    panel:   { jpegQuality: 70, maxWidth: 1280 },
-    live:    { jpegQuality: 55, maxWidth: 720, fps: 10 }
+    panel:   { jpegQuality: 70, maxWidth: 1280, format: 'jpeg' },
+    live:    { jpegQuality: 55, maxWidth: 720,  fps: 10, format: 'jpeg' }
 };
 // Field → DOM ids per context (slider / value display / heredado tag)
 const Q_FIELDS = [
@@ -1601,6 +1645,42 @@ function qualityLoadCurrent() {
         }
         tagEl.style.display = isOwn ? 'none' : '';
     }
+    // Format checkboxes (panel + live)
+    document.getElementById('q-pan-png').checked = qualityResolve('panel', 'format').value === 'png';
+    document.getElementById('q-liv-png').checked = qualityResolve('live',  'format').value === 'png';
+    qualityFormatChanged('panel');
+    qualityFormatChanged('live');
+}
+
+// When the lossless checkbox flips, grey out the JPEG-quality slider visually
+// (PNG is lossless, so JPEG quality is meaningless). The value still sends, but
+// the server ignores it whenever format=png.
+function qualityFormatChanged(ctx) {
+    const isPng = document.getElementById(ctx === 'panel' ? 'q-pan-png' : 'q-liv-png').checked;
+    const jSliderId = ctx === 'panel' ? 'q-pan-j' : 'q-liv-j';
+    const jSlider = document.getElementById(jSliderId);
+    const jRow    = jSlider.previousElementSibling;
+    jSlider.classList.toggle('is-disabled', isPng);
+    if (jRow) jRow.classList.toggle('is-disabled', isPng);
+}
+
+function qualityMaxQuality() {
+    // Archive (PNG always, here we just push width to Original)
+    document.getElementById('q-arch-w').value = 6;
+    document.getElementById('q-arch-w-val').textContent = qWidthLabel(Q_WIDTHS[6]);
+    document.getElementById('q-arch-w-tag').style.display = 'none';
+    // Panel: PNG + Original
+    document.getElementById('q-pan-png').checked = true;
+    document.getElementById('q-pan-w').value = 6;
+    document.getElementById('q-pan-w-val').textContent = qWidthLabel(Q_WIDTHS[6]);
+    document.getElementById('q-pan-w-tag').style.display = 'none';
+    qualityFormatChanged('panel');
+    // Live: PNG + Original (FPS unchanged — user keeps control of throughput)
+    document.getElementById('q-liv-png').checked = true;
+    document.getElementById('q-liv-w').value = 6;
+    document.getElementById('q-liv-w-val').textContent = qWidthLabel(Q_WIDTHS[6]);
+    document.getElementById('q-liv-w-tag').style.display = 'none';
+    qualityFormatChanged('live');
 }
 
 // Coupling Calidad ↔ Ancho dentro de panel y de live (mismo concepto de
@@ -1672,12 +1752,14 @@ async function qualityApply() {
         },
         panel: {
             jpegQuality: +document.getElementById('q-pan-j').value,
-            maxWidth:    Q_WIDTHS[+document.getElementById('q-pan-w').value]
+            maxWidth:    Q_WIDTHS[+document.getElementById('q-pan-w').value],
+            format:      document.getElementById('q-pan-png').checked ? 'png' : 'jpeg'
         },
         live: {
             jpegQuality: +document.getElementById('q-liv-j').value,
             maxWidth:    Q_WIDTHS[+document.getElementById('q-liv-w').value],
-            fps:         +document.getElementById('q-liv-f').value
+            fps:         +document.getElementById('q-liv-f').value,
+            format:      document.getElementById('q-liv-png').checked ? 'png' : 'jpeg'
         }
     };
     if (qScope !== 'global') {

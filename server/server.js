@@ -242,15 +242,18 @@ function sanitizeContext(ctx, input) {
     const out = {};
     if (!input || typeof input !== 'object') return out;
     const num = (v, lo, hi) => Number.isFinite(+v) ? Math.max(lo, Math.min(hi, Math.round(+v))) : null;
+    const fmt = (v) => (v === 'png' || v === 'jpeg') ? v : null;
     if (ctx === 'archive') {
         const w = num(input.maxWidth, 0, 3840);    if (w != null) out.maxWidth = w;
     } else if (ctx === 'panel') {
         const j = num(input.jpegQuality, 1, 100);  if (j != null) out.jpegQuality = j;
         const w = num(input.maxWidth, 0, 3840);    if (w != null) out.maxWidth    = w;
+        const f = fmt(input.format);               if (f != null) out.format      = f;
     } else if (ctx === 'live') {
         const j = num(input.jpegQuality, 1, 100);  if (j != null) out.jpegQuality = j;
         const w = num(input.maxWidth, 0, 3840);    if (w != null) out.maxWidth    = w;
-        const f = num(input.fps,         1, 15);   if (f != null) out.fps         = f;
+        const fp = num(input.fps,        1, 15);   if (fp != null) out.fps        = fp;
+        const f = fmt(input.format);               if (f != null) out.format      = f;
     }
     return out;
 }
@@ -779,10 +782,19 @@ app.get('/api/dashboard/clients', requireApiAuth, (req, res) => {
     res.json(list);
 });
 
+// Detect image MIME from magic bytes so the dashboard can send either JPEG or PNG
+// transparently (the plugin chooses the format per-context in QualityConfig).
+function detectImageMime(buf) {
+    if (!buf || buf.length < 4) return 'image/jpeg';
+    if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4E && buf[3] === 0x47) return 'image/png';
+    if (buf[0] === 0xFF && buf[1] === 0xD8 && buf[2] === 0xFF) return 'image/jpeg';
+    return 'image/jpeg';
+}
+
 app.get('/api/dashboard/screenshot/:clientId', requireApiAuth, (req, res) => {
     const client = clients.get(req.params.clientId);
     if (!client || !client.screenshotData) return res.status(404).send('Sin captura disponible');
-    res.set('Content-Type', 'image/jpeg');
+    res.set('Content-Type', detectImageMime(client.screenshotData));
     res.set('Cache-Control', 'no-store');
     res.send(client.screenshotData);
 });

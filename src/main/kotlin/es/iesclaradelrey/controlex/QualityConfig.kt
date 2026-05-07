@@ -32,10 +32,12 @@ class QualityConfig(@Suppress("UNUSED_PARAMETER") project: Project) {
 
     @Volatile var panelJpegQuality: Int = 70
     @Volatile var panelMaxWidth:    Int = 1280
+    @Volatile var panelFormat:      String = "jpeg" // "jpeg" | "png" (lossless)
 
     @Volatile var liveJpegQuality: Int = 55
     @Volatile var liveMaxWidth:    Int = 720
     @Volatile var liveFps:         Int = ControlexConfig.STREAM_FPS.coerceIn(1, 15)
+    @Volatile var liveFormat:      String = "jpeg" // "jpeg" | "png" (lossless)
 
     private val listeners = mutableListOf<() -> Unit>()
     fun addListener(l: () -> Unit) { synchronized(listeners) { listeners.add(l) } }
@@ -76,6 +78,10 @@ class QualityConfig(@Suppress("UNUSED_PARAMETER") project: Project) {
                 val nw = v.toInt().coerceAtLeast(0).coerceAtMost(3840)
                 if (nw != panelMaxWidth) { panelMaxWidth = nw; changed = true }
             }
+            strField("format", pan)?.let { v ->
+                val nv = if (v == "png") "png" else "jpeg"
+                if (nv != panelFormat) { panelFormat = nv; changed = true }
+            }
         }
         if (liv != null) {
             numField("jpegQuality", liv)?.let { v ->
@@ -89,6 +95,10 @@ class QualityConfig(@Suppress("UNUSED_PARAMETER") project: Project) {
             numField("fps", liv)?.let { v ->
                 val nv = v.toInt().coerceIn(1, 15)
                 if (nv != liveFps) { liveFps = nv; changed = true }
+            }
+            strField("format", liv)?.let { v ->
+                val nv = if (v == "png") "png" else "jpeg"
+                if (nv != liveFormat) { liveFormat = nv; changed = true }
             }
         }
 
@@ -135,11 +145,13 @@ class QualityConfig(@Suppress("UNUSED_PARAMETER") project: Project) {
                 pan?.let {
                     panelJpegQuality = numField("jpegQuality", it)?.toInt()?.coerceIn(1, 100) ?: panelJpegQuality
                     panelMaxWidth    = numField("maxWidth",    it)?.toInt()?.coerceAtLeast(0)?.coerceAtMost(3840) ?: panelMaxWidth
+                    panelFormat      = strField("format",      it)?.let { v -> if (v == "png") "png" else "jpeg" } ?: panelFormat
                 }
                 liv?.let {
                     liveJpegQuality = numField("jpegQuality", it)?.toInt()?.coerceIn(1, 100) ?: liveJpegQuality
                     liveMaxWidth    = numField("maxWidth",    it)?.toInt()?.coerceAtLeast(0)?.coerceAtMost(3840) ?: liveMaxWidth
                     liveFps         = numField("fps",         it)?.toInt()?.coerceIn(1, 15)  ?: liveFps
+                    liveFormat      = strField("format",      it)?.let { v -> if (v == "png") "png" else "jpeg" } ?: liveFormat
                 }
             } else {
                 // Legacy flat schema. Migrate then re-persist.
@@ -161,8 +173,8 @@ class QualityConfig(@Suppress("UNUSED_PARAMETER") project: Project) {
             file.parentFile?.mkdirs()
             file.writeText(
                 """{"archive":{"maxWidth":$archiveMaxWidth},""" +
-                """"panel":{"jpegQuality":$panelJpegQuality,"maxWidth":$panelMaxWidth},""" +
-                """"live":{"jpegQuality":$liveJpegQuality,"maxWidth":$liveMaxWidth,"fps":$liveFps}}"""
+                """"panel":{"jpegQuality":$panelJpegQuality,"maxWidth":$panelMaxWidth,"format":"$panelFormat"},""" +
+                """"live":{"jpegQuality":$liveJpegQuality,"maxWidth":$liveMaxWidth,"fps":$liveFps,"format":"$liveFormat"}}"""
             )
         } catch (e: Exception) {
             log.warn("Controlex: error guardando quality.json: ${e.message}")
@@ -171,6 +183,9 @@ class QualityConfig(@Suppress("UNUSED_PARAMETER") project: Project) {
 
     private fun numField(name: String, json: String): Long? =
         Regex(""""$name"\s*:\s*(-?\d+)""").find(json)?.groupValues?.get(1)?.toLongOrNull()
+
+    private fun strField(name: String, json: String): String? =
+        Regex(""""$name"\s*:\s*"([^"]*)"""").find(json)?.groupValues?.get(1)
 
     /** Naive JSON sub-object extractor. Works because our payloads have only number fields inside contexts. */
     private fun subObj(name: String, json: String): String? {
