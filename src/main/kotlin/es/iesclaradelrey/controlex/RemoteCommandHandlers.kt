@@ -338,16 +338,26 @@ object RemoteCommandHandlers {
                 3 -> InputEvent.BUTTON3_DOWN_MASK
                 else -> InputEvent.BUTTON1_DOWN_MASK
             }
-            // Forzar IntelliJ al frente antes del click. En Windows el
-            // simple toFront() puede ser ignorado por la protección anti
-            // focus-stealing si Chrome (o cualquier otra app) está en
-            // foreground; además, si Chrome está cubriendo visualmente el
-            // área del IDE, el click acaba yendo a Chrome (es el SO el que
-            // routea el evento por z-order y posición).
+            val robot = Robot()
+            // Combinación de trucos para vencer la protección anti-focus-
+            // stealing del SO (especialmente Windows) y asegurar que el
+            // click llegue al IDE aunque Chrome u otra app esté en foreground:
             //
-            // Truco: poner alwaysOnTop=true momentáneamente. Eso bypasea la
-            // protección anti foco. Lo quitamos después del click para no
-            // dejar IntelliJ siempre encima.
+            //   1. Pulsar Alt brevemente — resetea el foreground-lock del
+            //      sistema, lo que permite que la elevación posterior surta
+            //      efecto. (Truco bien conocido en programación Win32.)
+            //   2. Poner alwaysOnTop=true momentáneamente + toFront() +
+            //      requestFocus() para forzar que la ventana de IntelliJ
+            //      se eleve por encima de la app que estuviera tapándola.
+            //   3. Esperar a que el WM procese la elevación.
+            //   4. Inyectar el mouseMove + mousePress + mouseRelease.
+            //   5. Quitar alwaysOnTop tras el click.
+            try {
+                robot.keyPress(java.awt.event.KeyEvent.VK_ALT)
+                robot.keyRelease(java.awt.event.KeyEvent.VK_ALT)
+            } catch (_: Throwable) {}
+            robot.delay(40)
+
             val frame = WindowManager.getInstance().getFrame(project)
             if (frame != null) {
                 javax.swing.SwingUtilities.invokeAndWait {
@@ -358,17 +368,15 @@ object RemoteCommandHandlers {
                         frame.requestFocus()
                     } catch (_: Throwable) {}
                 }
-                // Esperar a que el WM procese la elevación.
-                Thread.sleep(120)
+                Thread.sleep(180)
             }
-            val robot = Robot()
+
             robot.mouseMove(screenX, screenY)
             robot.delay(80)
             robot.mousePress(mask)
             robot.delay(60)
             robot.mouseRelease(mask)
-            // Quitar alwaysOnTop poco después del click para no estorbar
-            // al alumno el resto del rato.
+
             if (frame != null) {
                 javax.swing.SwingUtilities.invokeLater {
                     try { frame.isAlwaysOnTop = false } catch (_: Throwable) {}
