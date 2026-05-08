@@ -167,6 +167,13 @@ app.get('/', requireDashboardAuth, (req, res) => {
     res.send(html);
 });
 
+// Self-hosted JS bundles (CodeMirror for Pair, etc.). Public on purpose:
+// they are static JS, no secrets, and self-hosting avoids school proxies
+// blocking esm.run / esm.sh / unpkg.
+app.use('/vendor', express.static(path.join(__dirname, 'public/vendor'), {
+    maxAge: '1d', immutable: false
+}));
+
 // ── Category persistence ──────────────────────────────────────────────────────
 
 const extraCategories = (() => {

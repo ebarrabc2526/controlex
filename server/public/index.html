@@ -1755,21 +1755,12 @@ document.querySelectorAll('#tb-actions [data-drawer-action]').forEach(btn => {
 // Reset drawer state when crossing the breakpoint (avoid getting stuck open on resize)
 window.matchMedia('(max-width: 1180px)').addEventListener('change', closeDrawer);
 
-// ── Pair dialog stubs ─────────────────────────────────────────────────────────
-// The full implementation lives in the <script type="module"> at the bottom and
-// depends on CodeMirror via esm.run. If those imports fail (CDN blocked, offline
-// network), the module never executes and the card's onclick="openPair(...)"
-// would error silently. These stubs at least open the modal and surface the
-// problem; the module overrides them when it loads.
-function openPair(clientId, label) {
-    document.getElementById('pair-sub').textContent  = 'Alumno: ' + label;
-    document.getElementById('pair-path').value       = '';
-    document.getElementById('modal-pair').style.display = 'flex';
-    document.getElementById('pair-status').textContent =
-        'Cargando editor (CodeMirror desde esm.run)… Si no aparece en unos segundos, comprueba la conexión.';
-}
-function startPairSession() { alert('El editor todavía no se ha cargado.'); }
-function closePair() { closeModal('modal-pair'); }
+// Pair dialog: la implementación completa vive en el <script> de Pair más abajo,
+// que depende de CodeMirror — ahora servido localmente desde /vendor/cm.bundle.js
+// (antes vía esm.run, que el proxy del cole bloqueaba y dejaba el botón "Abrir
+// sesión" siempre con el error "El editor todavía no se ha cargado"). Como el
+// bundle es local y se carga síncrono, no hay stub: openPair / startPairSession
+// / closePair se definen directamente en el script de Pair.
 
 // ── Quality dialog ────────────────────────────────────────────────────────────
 // Slider de izquierda (mínimo) a derecha (máximo). 0 = Original (sin downscale)
@@ -2057,18 +2048,21 @@ document.addEventListener('keydown', e => {
 });
 </script>
 
-<!-- ── CodeMirror 6 via jsdelivr ESM (esm.run) ──────────────────────────────────
-     esm.sh tends to be blocked by school proxies; jsdelivr passes through more
-     filters and serves the same packages. -->
-<script type="module">
-'use strict';
-
-import { EditorView, keymap, lineNumbers } from 'https://esm.run/@codemirror/view@6';
-import { EditorState, Transaction } from 'https://esm.run/@codemirror/state@6';
-import { defaultKeymap, history, historyKeymap } from 'https://esm.run/@codemirror/commands@6';
-import { oneDark } from 'https://esm.run/@codemirror/theme-one-dark@6';
-import { StateField, StateEffect, Decoration } from 'https://esm.run/@codemirror/state@6';
-import { WidgetType } from 'https://esm.run/@codemirror/view@6';
+<!-- ── CodeMirror 6 self-hosted (server/public/vendor/cm.bundle.js) ────────────
+     Antes se cargaba vía esm.run (jsdelivr ESM); cuando el proxy del cole lo
+     bloqueaba el módulo no llegaba a ejecutarse y el botón "Abrir sesión"
+     siempre mostraba "El editor todavía no se ha cargado". Ahora va por el
+     mismo dominio que el panel — sin CDN externos, sin sorpresas. -->
+<script src="/vendor/cm.bundle.js"></script>
+<script>
+const {
+    EditorView, keymap, lineNumbers,
+    EditorState, Transaction,
+    defaultKeymap, history, historyKeymap,
+    oneDark,
+    StateField, StateEffect, Decoration,
+    WidgetType
+} = window.__cm;
 
 // ── Pair state ────────────────────────────────────────────────────────────────
 let pairClientId   = null;

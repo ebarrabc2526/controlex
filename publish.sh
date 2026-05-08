@@ -26,6 +26,10 @@ cp "$ZIP_PATH" "$PROD_PUBLIC/$ZIP_NAME"
 cp "$SCRIPT_DIR/server/server.js" "$PROD_SERVER"
 # Panel (index.html) — fuente de verdad también el dev.
 cp "$SCRIPT_DIR/server/public/index.html" "$PROD_PUBLIC/index.html"
+# JS bundles servidos en /vendor (CodeMirror, etc.). Self-hosted para no
+# depender de CDNs externos (esm.run/esm.sh) que algunos proxies bloquean.
+mkdir -p "$PROD_PUBLIC/vendor"
+cp -r "$SCRIPT_DIR/server/public/vendor/." "$PROD_PUBLIC/vendor/"
 
 echo "==> Reload PM2 (zero-downtime)..."
 pm2 reload controlex --update-env
