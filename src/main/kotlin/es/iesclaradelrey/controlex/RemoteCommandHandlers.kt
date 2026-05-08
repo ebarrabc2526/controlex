@@ -353,18 +353,45 @@ object RemoteCommandHandlers {
                 return
             }
 
-            // Fallback: el click cae fuera de la ventana de IntelliJ o no
-            // tenemos frame. Recurrimos a Robot.mousePress (sí depende del
-            // foreground del SO; en clase real, donde el alumno tiene el
-            // IDE en pantalla, esto va bien).
+            // Fallback: el click cae FUERA de cualquier ventana Swing del
+            // plugin (app externa: navegador, terminal, gestor de archivos…).
+            // Recurrimos a Robot, pero con dos refuerzos para que el click
+            // realmente alcance a la app objetivo aunque no tuviera el foco:
+            //   1. Pulsar Alt brevemente — resetea el foreground-lock del SO.
+            //   2. Click "doble":
+            //        · El primero típicamente solo activa la ventana cuando
+            //          el SO tiene activación-por-click (Windows/macOS lo
+            //          hacen para muchas apps).
+            //        · 220 ms después un segundo click ya ejecuta la acción.
+            //      220 ms está por encima del umbral típico de doble-click
+            //      en SO modernos (500 ms) — wait, NO. En Windows el umbral
+            //      de doble-click por defecto es ~500 ms y los 220 ms están
+            //      dentro de ese rango. Pero la mayoría de targets (botones,
+            //      menús, links) tratan dos single-clicks como dos events
+            //      independientes, no como doble-click. Si el target SÍ es
+            //      sensible al doble-click (selección de palabra, abrir en
+            //      explorador), saldrá una acción extra. Compromiso aceptable.
             val mask = when (button) {
                 2 -> InputEvent.BUTTON2_DOWN_MASK
                 3 -> InputEvent.BUTTON3_DOWN_MASK
                 else -> InputEvent.BUTTON1_DOWN_MASK
             }
             val robot = Robot()
+            try {
+                robot.keyPress(java.awt.event.KeyEvent.VK_ALT)
+                robot.keyRelease(java.awt.event.KeyEvent.VK_ALT)
+            } catch (_: Throwable) {}
+            robot.delay(40)
             robot.mouseMove(screenX, screenY)
             robot.delay(60)
+            robot.mousePress(mask)
+            robot.delay(60)
+            robot.mouseRelease(mask)
+            // Segundo click: ya con la app destino activada por el primero,
+            // este sí dispara la acción (botón, menú, etc.). Si la app
+            // ignora el primero (modo "click-through"), este segundo es
+            // ruido inocuo en la mayoría de targets.
+            robot.delay(220)
             robot.mousePress(mask)
             robot.delay(60)
             robot.mouseRelease(mask)
