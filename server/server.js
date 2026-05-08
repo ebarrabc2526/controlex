@@ -1303,10 +1303,23 @@ function handlePluginPairWs(ws, clientId) {
     ws.on('message', (data, isBinary) => {
         if (isBinary) return;
         const text = data.toString();
-        // Forward to every active teacher WS for this clientId.
+        let msg = null;
+        try { msg = JSON.parse(text); } catch (_) {}
+        const msgPath = msg?.path;
+        // Forward to matching teacher WS. If the teacher hasn't yet connected
+        // its WS (typical race: panel POSTs pair-open, plugin sends doc-state
+        // immediately, the teacher's WS upgrade is still on the wire), buffer
+        // the message into the session — handleDashboardPairWs will drain the
+        // buffer when the teacher attaches.
         for (const s of pairSessions.values()) {
-            if (s.clientId === clientId && s.teacherWs && s.teacherWs.readyState === WebSocket.OPEN) {
+            if (s.clientId !== clientId) continue;
+            if (msgPath && s.path !== msgPath) continue;
+            if (s.teacherWs && s.teacherWs.readyState === WebSocket.OPEN) {
                 try { s.teacherWs.send(text); } catch (_) {}
+            } else {
+                if (!s.buffer) s.buffer = [];
+                s.buffer.push(text);
+                if (s.buffer.length > 200) s.buffer.shift();   // cap by drop-oldest
             }
         }
     });
@@ -1323,6 +1336,14 @@ function handleDashboardPairWs(ws, token) {
     if (session.teacherWs) { try { session.teacherWs.close(); } catch (_) {} }
     session.teacherWs = ws;
     session.expiresAt = Number.MAX_SAFE_INTEGER;  // valid until WS closes
+    // Drain any buffered messages from the plugin that arrived before this
+    // WS finished upgrading.
+    if (session.buffer && session.buffer.length) {
+        for (const text of session.buffer) {
+            try { ws.send(text); } catch (_) {}
+        }
+        session.buffer = [];
+    }
     ws.on('message', (data, isBinary) => {
         if (isBinary) return;
         const pluginWs = pluginPairSockets.get(session.clientId);

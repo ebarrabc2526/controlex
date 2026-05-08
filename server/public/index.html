@@ -2545,18 +2545,26 @@ function applyRemoteOps(ops, newVersion) {
 }
 
 // ── WS connect ────────────────────────────────────────────────────────────────
+let _docStateRequestTimer = null;
+let _docStateRetries       = 0;
+
 function connectPairWs(token) {
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
     const url = `${proto}//${location.host}/api/dashboard/pair?token=${encodeURIComponent(token)}`;
     pairWs = new WebSocket(url);
 
-    pairWs.onopen = () => setStatus('Conectado. Esperando estado del documento…');
+    pairWs.onopen = () => {
+        setStatus('Conectado. Esperando estado del documento…');
+        _docStateRetries = 0;
+        scheduleDocStateRequest();
+    };
 
     pairWs.onmessage = e => {
         let msg;
         try { msg = JSON.parse(e.data); } catch { return; }
 
         if (msg.type === 'doc-state') {
+            clearTimeout(_docStateRequestTimer);
             pairVersion = msg.version || 0;
             if (pairView) {
                 pairView.dispatch({
@@ -2576,7 +2584,27 @@ function connectPairWs(token) {
     };
 
     pairWs.onerror = () => setStatus('Error en la conexión WebSocket.');
-    pairWs.onclose = () => setStatus('Sesión cerrada.');
+    pairWs.onclose = () => { clearTimeout(_docStateRequestTimer); setStatus('Sesión cerrada.'); };
+}
+
+// Si el doc-state no llega en 3 s (p.ej. porque el plugin lo envió antes de
+// que la WS del profesor estuviera arriba y aunque el servidor lo bufferiza,
+// algo se ha perdido) pedimos al plugin que lo reenvíe. Reintentamos hasta
+// 5 veces antes de mostrar timeout.
+function scheduleDocStateRequest() {
+    clearTimeout(_docStateRequestTimer);
+    _docStateRequestTimer = setTimeout(() => {
+        if (!pairWs || pairWs.readyState !== WebSocket.OPEN) return;
+        const path = document.getElementById('pair-path').value.trim();
+        if (!path) return;
+        try { pairWs.send(JSON.stringify({ type: 'request-state', path })); } catch (_) {}
+        _docStateRetries++;
+        if (_docStateRetries >= 5) {
+            setStatus('No se ha podido obtener el estado del documento. Comprueba que el plugin del alumno está actualizado y reabre la sesión.');
+        } else {
+            scheduleDocStateRequest();
+        }
+    }, 3000);
 }
 
 // ── Public API (called from non-module script) ────────────────────────────────

@@ -137,6 +137,12 @@ class PairSessionManager(private val project: Project) : Disposable {
         val s = sessions[path] ?: return
 
         when (type) {
+            "request-state" -> ApplicationManager.getApplication().invokeLater {
+                // El panel pide el estado actual (porque el doc-state inicial se
+                // perdió por timing). Lo reenviamos sin enroscar nada más.
+                val content = s.editor.document.text
+                sendJson("""{"type":"doc-state","path":${q(path)},"version":${s.version},"content":${q(content)}}""")
+            }
             "edit" -> ApplicationManager.getApplication().invokeLater {
                 val opsBlock = Regex(""""ops"\s*:\s*\[(.*?)\]""", RegexOption.DOT_MATCHES_ALL)
                     .find(json)?.groupValues?.get(1) ?: return@invokeLater
