@@ -15,6 +15,8 @@ const { WebSocketServer, WebSocket } = require('ws');
 
 const CATEGORIES_PATH = path.join(os.homedir(), '.controlex-server', 'categories.json');
 const QUALITY_PATH    = path.join(os.homedir(), '.controlex-server', 'quality.json');
+const HELP_PATH       = path.join(os.homedir(), '.controlex-server', 'help-requests.json');
+const MAX_HELP_REQUESTS = 500;
 
 const app = express();
 const PORT          = process.env.PORT || 3000;
@@ -730,6 +732,22 @@ function pushCommand(clientId, cmd) {
     return delivered > 0;
 }
 
+// Help-request persistence (history that survives restarts).
+let helpRequests = (() => {
+    try {
+        fs.mkdirSync(path.dirname(HELP_PATH), { recursive: true });
+        if (fs.existsSync(HELP_PATH)) {
+            const raw = JSON.parse(fs.readFileSync(HELP_PATH, 'utf8'));
+            return Array.isArray(raw) ? raw : [];
+        }
+    } catch (e) { console.warn('[controlex] help-requests load:', e.message); }
+    return [];
+})();
+function persistHelpRequests() {
+    try { fs.writeFileSync(HELP_PATH, JSON.stringify(helpRequests, null, 2)); }
+    catch (e) { console.warn('[controlex] help-requests persist:', e.message); }
+}
+
 // Client: student requests help
 app.post('/api/help-request', requireClientAuth, (req, res) => {
     const { clientId, text } = req.body || {};
@@ -738,11 +756,71 @@ app.post('/api/help-request', requireClientAuth, (req, res) => {
     const c = clients.get(String(clientId));
     const view = c ? clientView(c) : { clientId };
 
-    broadcast('help-request', {
-        ...view,
+    const entry = {
+        id: crypto.randomBytes(8).toString('hex'),
+        clientId: String(clientId),
+        seqNum:       view.seqNum       ?? null,
+        nickname:     view.nickname     ?? null,
+        osUser:       view.osUser       ?? null,
+        ip:           view.ip           ?? null,
+        categoryMain: view.categoryMain ?? null,
         text: String(text || '').slice(0, 1000),
-        at:   new Date().toISOString()
-    });
+        at:   new Date().toISOString(),
+        resolved:   false,
+        resolvedAt: null
+    };
+    helpRequests.unshift(entry);
+    if (helpRequests.length > MAX_HELP_REQUESTS) helpRequests.length = MAX_HELP_REQUESTS;
+    persistHelpRequests();
+    broadcast('help-request', entry);
+    res.json({ ok: true });
+});
+
+// List historical help-requests (newest first)
+app.get('/api/dashboard/help-requests', requireApiAuth, (req, res) => {
+    res.json(helpRequests);
+});
+
+// Toggle resolved on a single entry
+app.patch('/api/dashboard/help-requests/:id', requireApiAuth, (req, res) => {
+    const entry = helpRequests.find(h => h.id === req.params.id);
+    if (!entry) return res.status(404).json({ error: 'No existe' });
+    if (typeof req.body?.resolved === 'boolean') {
+        entry.resolved = req.body.resolved;
+        entry.resolvedAt = req.body.resolved ? new Date().toISOString() : null;
+    }
+    persistHelpRequests();
+    broadcast('help-request-update', { id: entry.id, resolved: entry.resolved, resolvedAt: entry.resolvedAt });
+    res.json({ ok: true });
+});
+
+// Delete a single entry
+app.delete('/api/dashboard/help-requests/:id', requireApiAuth, (req, res) => {
+    const idx = helpRequests.findIndex(h => h.id === req.params.id);
+    if (idx === -1) return res.status(404).json({ error: 'No existe' });
+    helpRequests.splice(idx, 1);
+    persistHelpRequests();
+    broadcast('help-request-removed', { id: req.params.id });
+    res.json({ ok: true });
+});
+
+// Bulk: { action: 'delete'|'resolve'|'unresolve', ids: [...] }
+app.post('/api/dashboard/help-requests/bulk', requireApiAuth, (req, res) => {
+    const { action, ids } = req.body || {};
+    if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'ids vacío' });
+    const set = new Set(ids);
+    if (action === 'delete') {
+        helpRequests = helpRequests.filter(h => !set.has(h.id));
+    } else if (action === 'resolve' || action === 'unresolve') {
+        const r = action === 'resolve';
+        for (const h of helpRequests) {
+            if (set.has(h.id)) { h.resolved = r; h.resolvedAt = r ? new Date().toISOString() : null; }
+        }
+    } else {
+        return res.status(400).json({ error: "action debe ser 'delete', 'resolve' o 'unresolve'" });
+    }
+    persistHelpRequests();
+    broadcast('help-request-bulk', { action, ids });
     res.json({ ok: true });
 });
 

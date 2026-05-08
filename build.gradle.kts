@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "es.iesclaradelrey"
-version = "2.7.5"
+version = "2.8.0"
 
 repositories {
     mavenCentral()

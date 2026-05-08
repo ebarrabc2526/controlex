@@ -55,6 +55,16 @@ body {
 }
 .tb-quality:hover { background: rgba(255,255,255,.28); }
 .tb-quality.is-max { background: #ffd54f; color: #1565C0; border-color: #ffd54f; }
+.tb-help-inbox {
+  font-size: .78rem; font-weight: 700; white-space: nowrap;
+  background: rgba(255,255,255,.15); border: 1px solid rgba(255,255,255,.3);
+  color: #fff; padding: 4px 10px; border-radius: 14px; cursor: pointer;
+  transition: background .15s;
+}
+.tb-help-inbox:hover { background: rgba(255,255,255,.28); }
+.tb-help-inbox.has-pending { background: #d32f2f; border-color: #d32f2f; }
+.tb-help-inbox.has-pending { animation: helpInboxPulse 1.5s ease-in-out infinite; }
+@keyframes helpInboxPulse { 0%, 100% { opacity: 1 } 50% { opacity: .65 } }
 
 /* Help-request toasts (student → teacher SOS) */
 #help-toast-stack {
@@ -79,6 +89,38 @@ body {
 @keyframes helpFlash {
   0%, 100% { box-shadow: 0 2px 12px rgba(0,0,0,.08); outline: 0 }
   50%      { box-shadow: 0 0 0 4px #d32f2f; outline: 4px solid #ff5252 }
+}
+
+.help-row {
+  display: flex; gap: 10px; padding: 8px 12px; border-bottom: 1px solid #f0f0f0;
+  align-items: flex-start; cursor: default;
+}
+.help-row:last-child { border-bottom: 0; }
+.help-row.is-resolved { opacity: .55; background: #f8f8f8; }
+.help-row input[type=checkbox] { margin-top: 4px; flex-shrink: 0; accent-color: #d32f2f; }
+.help-row .help-row-body { flex: 1; min-width: 0; }
+.help-row .help-row-head {
+  display: flex; gap: 8px; align-items: center; font-size: .82rem; color: #555; flex-wrap: wrap;
+}
+.help-row .help-row-name { font-weight: 700; color: #b71c1c; }
+.help-row.is-resolved .help-row-name { color: #777; }
+.help-row .help-row-time { color: #999; font-size: .72rem; }
+.help-row .help-row-text {
+  margin-top: 3px; font-size: .9rem; color: #222; white-space: pre-wrap; word-break: break-word;
+}
+.help-row .help-row-actions { display: flex; gap: 4px; margin-top: 4px; }
+.help-row .help-row-actions button {
+  font-size: .72rem; padding: 3px 8px; border: 1px solid #ddd; background: #fff;
+  border-radius: 4px; cursor: pointer;
+}
+.help-row .help-row-actions button:hover { background: #f0f0f0; }
+.help-row .badge-resolved {
+  background: #c8e6c9; color: #1b5e20; font-size: .65rem; font-weight: 700;
+  padding: 1px 6px; border-radius: 3px; letter-spacing: .5px;
+}
+.help-row .badge-pending {
+  background: #ffcdd2; color: #b71c1c; font-size: .65rem; font-weight: 700;
+  padding: 1px 6px; border-radius: 3px; letter-spacing: .5px;
 }
 .tb-sep { width: 1px; height: 28px; background: rgba(255,255,255,.25); flex-shrink: 0; }
 .spacer { flex: 1; }
@@ -720,6 +762,7 @@ body {
   <h1>CONTROLEX<span class="tb-ver" id="tb-ver"></span></h1>
   <span class="tb-count" id="tb-count">—</span>
   <span class="tb-quality" id="tb-quality" onclick="openQuality()" title="Calidad global activa — pulsa para configurar">🎚 …</span>
+  <span class="tb-help-inbox" id="tb-help-inbox" onclick="openHelpInbox()" title="Bandeja de peticiones de ayuda">🆘 <span id="help-pending-count">0</span></span>
 
   <div class="tb-sep"></div>
 
@@ -834,6 +877,38 @@ body {
     <div class="modal-actions">
       <button onclick="closeModal('modal-msg')">Cancelar</button>
       <button class="btn-primary" onclick="sendMsg()">Enviar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Help-requests inbox modal ───────────────────────────────────────────── -->
+<div id="modal-help-inbox" class="modal" style="display:none">
+  <div class="modal-box" style="width:680px;max-width:96vw;max-height:90vh;display:flex;flex-direction:column">
+    <h2>🆘 Peticiones de ayuda</h2>
+    <p class="sub">Histórico persistente. Click en una fila para responder, o selecciona varias para responder a todas con el mismo mensaje.</p>
+
+    <div style="display:flex;gap:8px;align-items:center;margin:8px 0;flex-wrap:wrap">
+      <select id="help-filter" onchange="renderHelpInbox()" style="padding:6px 10px;border:1px solid #ddd;border-radius:6px;font-size:.85rem">
+        <option value="pending">Pendientes</option>
+        <option value="resolved">Resueltas</option>
+        <option value="all">Todas</option>
+      </select>
+      <button onclick="helpSelectAll()" class="tb-btn" style="background:#fff;color:#1565C0;border:1px solid #1565C0;padding:5px 12px;font-size:.82rem">☑ Seleccionar todas</button>
+      <button onclick="helpClearSel()" class="tb-btn" style="background:#fff;color:#1565C0;border:1px solid #1565C0;padding:5px 12px;font-size:.82rem">☐ Limpiar (<span id="help-sel-count">0</span>)</button>
+      <span style="flex:1"></span>
+      <button onclick="helpBulk('resolve')"   style="font-size:.82rem">✓ Marcar resueltas</button>
+      <button onclick="helpBulk('unresolve')" style="font-size:.82rem">↺ Reabrir</button>
+      <button onclick="helpBulk('delete')" style="font-size:.82rem;color:#b71c1c">🗑 Borrar</button>
+    </div>
+
+    <div id="help-list" style="flex:1;overflow-y:auto;border:1px solid #eee;border-radius:6px"></div>
+
+    <div style="margin-top:10px">
+      <textarea id="help-reply-text" placeholder="Mensaje a enviar a las peticiones seleccionadas (o pulsa 'Responder' en una fila para responder solo a esa)…" style="width:100%;height:64px;padding:6px 10px;border:1px solid #ddd;border-radius:6px;font-size:.9rem;resize:vertical"></textarea>
+    </div>
+    <div class="modal-actions">
+      <button onclick="closeModal('modal-help-inbox')">Cerrar</button>
+      <button class="btn-primary" onclick="helpReplyToSelected()">📨 Responder a seleccionadas (<span id="help-reply-count">0</span>)</button>
     </div>
   </div>
 </div>
@@ -991,6 +1066,168 @@ function toggleSelectClient(id, on) {
     // Refresh the parent category checkbox so all/some/none state stays in sync
     const c = clients.find(x => x.clientId === id);
     if (c) refreshCategoryHeaderCheck(c.categoryMain || '(sin categoría)');
+}
+
+// ── Help-request inbox (persistent history) ─────────────────────────────────
+let helpHistory = [];          // newest first, mirror of /api/dashboard/help-requests
+const helpSelected = new Set();
+
+function updateHelpBadge() {
+    const pending = helpHistory.filter(h => !h.resolved).length;
+    const el = document.getElementById('help-pending-count');
+    if (el) el.textContent = pending;
+    document.getElementById('tb-help-inbox')?.classList.toggle('has-pending', pending > 0);
+}
+
+async function fetchHelpHistory() {
+    try {
+        const r = await fetch('/api/dashboard/help-requests');
+        if (!r.ok) return;
+        helpHistory = await r.json();
+    } catch (_) { helpHistory = []; }
+    updateHelpBadge();
+    if (document.getElementById('modal-help-inbox').style.display === 'flex') renderHelpInbox();
+}
+
+async function openHelpInbox() {
+    helpSelected.clear();
+    await fetchHelpHistory();
+    renderHelpInbox();
+    document.getElementById('modal-help-inbox').style.display = 'flex';
+}
+
+function renderHelpInbox() {
+    const filter = document.getElementById('help-filter').value;
+    const list = document.getElementById('help-list');
+    let rows = helpHistory;
+    if (filter === 'pending')  rows = rows.filter(h => !h.resolved);
+    if (filter === 'resolved') rows = rows.filter(h =>  h.resolved);
+    if (rows.length === 0) {
+        list.innerHTML = '<p style="text-align:center;color:#888;padding:20px">Sin peticiones.</p>';
+    } else {
+        list.innerHTML = rows.map(h => {
+            const seq = h.seqNum != null ? `#${h.seqNum}` : '';
+            const name = esc(h.nickname || h.osUser || (h.clientId || '').slice(0, 8));
+            const ip   = esc(h.ip || '');
+            const cat  = h.categoryMain ? `· ${esc(h.categoryMain)}` : '';
+            const when = h.at ? new Date(h.at).toLocaleString() : '';
+            const cls  = h.resolved ? 'help-row is-resolved' : 'help-row';
+            const checked = helpSelected.has(h.id) ? 'checked' : '';
+            const badge = h.resolved
+                ? '<span class="badge-resolved">RESUELTA</span>'
+                : '<span class="badge-pending">PENDIENTE</span>';
+            return `
+                <div class="${cls}" data-id="${esc(h.id)}">
+                  <input type="checkbox" ${checked} onchange="helpToggleSel('${esc(h.id)}',this.checked)">
+                  <div class="help-row-body">
+                    <div class="help-row-head">
+                      ${badge}
+                      <span class="help-row-name">${seq} ${name}</span>
+                      <span style="color:#888">${ip} ${cat}</span>
+                      <span class="help-row-time">${esc(when)}</span>
+                    </div>
+                    <div class="help-row-text">${esc(h.text || '(sin mensaje)')}</div>
+                    <div class="help-row-actions">
+                      <button onclick="helpReplyOne('${esc(h.id)}','${esc(h.clientId)}','${seq} ${name}')">📨 Responder</button>
+                      <button onclick="helpGoTo('${esc(h.clientId)}')">🔍 Ir al cliente</button>
+                      ${h.resolved
+                          ? `<button onclick="helpSetResolved('${esc(h.id)}',false)">↺ Reabrir</button>`
+                          : `<button onclick="helpSetResolved('${esc(h.id)}',true)">✓ Resolver</button>`}
+                      <button onclick="helpDelete('${esc(h.id)}')" style="color:#b71c1c">🗑</button>
+                    </div>
+                  </div>
+                </div>`;
+        }).join('');
+    }
+    document.getElementById('help-sel-count').textContent   = helpSelected.size;
+    document.getElementById('help-reply-count').textContent = helpSelected.size;
+}
+
+function helpToggleSel(id, on) {
+    if (on) helpSelected.add(id); else helpSelected.delete(id);
+    document.getElementById('help-sel-count').textContent   = helpSelected.size;
+    document.getElementById('help-reply-count').textContent = helpSelected.size;
+}
+function helpSelectAll() {
+    const filter = document.getElementById('help-filter').value;
+    let rows = helpHistory;
+    if (filter === 'pending')  rows = rows.filter(h => !h.resolved);
+    if (filter === 'resolved') rows = rows.filter(h =>  h.resolved);
+    for (const h of rows) helpSelected.add(h.id);
+    renderHelpInbox();
+}
+function helpClearSel() { helpSelected.clear(); renderHelpInbox(); }
+
+async function helpSetResolved(id, resolved) {
+    await fetch(`/api/dashboard/help-requests/${encodeURIComponent(id)}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ resolved })
+    });
+    fetchHelpHistory();
+}
+async function helpDelete(id) {
+    if (!confirm('¿Borrar esta petición del histórico?')) return;
+    await fetch(`/api/dashboard/help-requests/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    helpSelected.delete(id);
+    fetchHelpHistory();
+}
+async function helpBulk(action) {
+    if (helpSelected.size === 0) { alert('Selecciona al menos una petición.'); return; }
+    if (action === 'delete' && !confirm(`¿Borrar ${helpSelected.size} peticiones del histórico?`)) return;
+    await fetch('/api/dashboard/help-requests/bulk', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, ids: [...helpSelected] })
+    });
+    if (action === 'delete') helpSelected.clear();
+    fetchHelpHistory();
+}
+
+function helpGoTo(clientId) {
+    closeModal('modal-help-inbox');
+    focusClient(clientId);
+}
+
+async function helpReplyOne(id, clientId, label) {
+    const text = prompt(`Responder a ${label}:`);
+    if (!text || !text.trim()) return;
+    try {
+        await fetch('/api/dashboard/message', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ clientId, text: text.trim() })
+        });
+        // mark as resolved automatically when answered
+        await helpSetResolved(id, true);
+    } catch (e) { alert('Error al enviar: ' + e.message); }
+}
+
+async function helpReplyToSelected() {
+    if (helpSelected.size === 0) { alert('Selecciona al menos una petición.'); return; }
+    const text = document.getElementById('help-reply-text').value.trim();
+    if (!text) { alert('Escribe el mensaje a enviar.'); return; }
+    const ids = [...helpSelected];
+    const items = helpHistory.filter(h => ids.includes(h.id));
+    // Send one message per affected clientId (dedupe so a student doesn't get
+    // the same answer twice if they had several pending requests selected).
+    const clientIds = [...new Set(items.map(i => i.clientId))];
+    let ok = 0;
+    for (const cid of clientIds) {
+        try {
+            const r = await fetch('/api/dashboard/message', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ clientId: cid, text })
+            });
+            if (r.ok) ok++;
+        } catch (_) {}
+    }
+    // Mark all the selected entries as resolved
+    await fetch('/api/dashboard/help-requests/bulk', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'resolve', ids })
+    });
+    document.getElementById('help-reply-text').value = '';
+    helpSelected.clear();
+    fetchHelpHistory();
+    alert(`Mensaje enviado a ${ok}/${clientIds.length} alumnos.`);
 }
 
 // ── Help-request handling (alumno → profesor SOS) ───────────────────────────
@@ -1242,6 +1479,7 @@ document.addEventListener('DOMContentLoaded', () => {
     updateHiddenCount();
     updateSelectCount();
     refreshQualityBadge();
+    fetchHelpHistory();
     // Version is injected server-side into #tb-ver, no fetch needed.
 });
 
@@ -1323,8 +1561,34 @@ function connectStream() {
     });
 
     eventSource.addEventListener('help-request', e => {
-        try { showHelpRequest(JSON.parse(e.data)); } catch (err) { console.error(err); }
+        try {
+            const data = JSON.parse(e.data);
+            // Add to local history (avoid dup if already there from a fetch).
+            if (data.id && !helpHistory.find(h => h.id === data.id)) helpHistory.unshift(data);
+            updateHelpBadge();
+            if (document.getElementById('modal-help-inbox').style.display === 'flex') renderHelpInbox();
+            showHelpRequest(data);
+        } catch (err) { console.error(err); }
     });
+    eventSource.addEventListener('help-request-update', e => {
+        try {
+            const { id, resolved, resolvedAt } = JSON.parse(e.data);
+            const h = helpHistory.find(x => x.id === id);
+            if (h) { h.resolved = resolved; h.resolvedAt = resolvedAt; }
+            updateHelpBadge();
+            if (document.getElementById('modal-help-inbox').style.display === 'flex') renderHelpInbox();
+        } catch (_) {}
+    });
+    eventSource.addEventListener('help-request-removed', e => {
+        try {
+            const { id } = JSON.parse(e.data);
+            helpHistory = helpHistory.filter(h => h.id !== id);
+            helpSelected.delete(id);
+            updateHelpBadge();
+            if (document.getElementById('modal-help-inbox').style.display === 'flex') renderHelpInbox();
+        } catch (_) {}
+    });
+    eventSource.addEventListener('help-request-bulk', () => fetchHelpHistory());
 
     eventSource.onerror = () => {
         // Auto-reconnect after 2s if stream drops
