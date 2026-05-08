@@ -815,6 +815,7 @@ body {
       <button class="tb-btn" type="button" data-drawer-action="clearSelection"      title="Limpiar selección">✖ Limpiar (<span id="select-count">0</span>)</button>
       <button class="tb-btn" type="button" data-drawer-action="selectionShow"       title="Mostrar (des-ocultar) los seleccionados">👁 Mostrar seleccionados</button>
       <button class="tb-btn" type="button" data-drawer-action="selectionHide"       title="Ocultar los seleccionados">🙈 Ocultar seleccionados</button>
+      <button class="tb-btn" type="button" data-drawer-action="openActionsBulk"     title="Ejecutar acción (Run, Debug, Stop…) en los clientes seleccionados">▶ Acciones a seleccionados</button>
     </div>
 
     <div class="drawer-group" data-label="Visibilidad">
@@ -877,6 +878,18 @@ body {
     <div class="modal-actions">
       <button onclick="closeModal('modal-msg')">Cancelar</button>
       <button class="btn-primary" onclick="sendMsg()">Enviar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Remote actions modal ────────────────────────────────────────────────── -->
+<div id="modal-actions" class="modal" style="display:none">
+  <div class="modal-box" style="width:480px">
+    <h2>▶ Acciones remotas</h2>
+    <p class="sub" id="actions-sub"></p>
+    <div id="actions-grid" style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:10px"></div>
+    <div class="modal-actions">
+      <button onclick="closeModal('modal-actions')">Cerrar</button>
     </div>
   </div>
 </div>
@@ -1066,6 +1079,65 @@ function toggleSelectClient(id, on) {
     // Refresh the parent category checkbox so all/some/none state stays in sync
     const c = clients.find(x => x.clientId === id);
     if (c) refreshCategoryHeaderCheck(c.categoryMain || '(sin categoría)');
+}
+
+// ── Remote actions (Run, Debug, Stop…) ───────────────────────────────────────
+// El servidor expone /api/dashboard/command con type:'run-action' aceptando
+// estos actionId en su allowlist (ALLOWED_ACTIONS en server.js). El plugin
+// los ejecuta vía ActionManager (la misma API que cuando los pulsas tú en
+// IntelliJ). Aquí pintamos botones para todos.
+const REMOTE_ACTIONS = [
+    { id: 'Run',                   label: '▶ Run',          desc: 'Ejecutar el run config actual' },
+    { id: 'Debug',                 label: '🐞 Debug',       desc: 'Lanzar el debugger' },
+    { id: 'Stop',                  label: '⏹ Stop',         desc: 'Parar el run/debug en curso' },
+    { id: 'Rerun',                 label: '↻ Rerun',        desc: 'Volver a ejecutar la última config' },
+    { id: 'CompileDirty',          label: '🔨 Compilar',    desc: 'Compilar los cambios' },
+    { id: 'SaveAll',               label: '💾 Guardar todo', desc: 'Save All' },
+    { id: 'ReformatCode',          label: '🎨 Formatear',   desc: 'Reformat code' },
+    { id: 'ToggleLineBreakpoint',  label: '🔴 Breakpoint',  desc: 'Toggle line breakpoint en la línea actual' }
+];
+
+let _actionsTargets = [];   // clientIds objetivo del modal
+
+function openActions(clientId, label) {
+    _actionsTargets = [clientId];
+    document.getElementById('actions-sub').textContent = `Destino: ${label}`;
+    renderActionsGrid();
+    document.getElementById('modal-actions').style.display = 'flex';
+}
+
+function openActionsBulk() {
+    if (selected.size === 0) { alert('No hay clientes seleccionados.'); return; }
+    _actionsTargets = [...selected];
+    document.getElementById('actions-sub').textContent = `Destino: ${_actionsTargets.length} cliente(s) seleccionado(s)`;
+    renderActionsGrid();
+    document.getElementById('modal-actions').style.display = 'flex';
+}
+
+function renderActionsGrid() {
+    const grid = document.getElementById('actions-grid');
+    grid.innerHTML = REMOTE_ACTIONS.map(a => `
+        <button onclick="runRemoteAction('${esc(a.id)}')" title="${esc(a.desc)}"
+                style="padding:10px 14px;font-size:.9rem;background:#fff;border:1px solid #1565C0;color:#1565C0;border-radius:6px;cursor:pointer;text-align:left">
+            ${a.label}
+        </button>`).join('');
+}
+
+async function runRemoteAction(actionId) {
+    if (!_actionsTargets.length) return;
+    let ok = 0, fail = 0;
+    for (const cid of _actionsTargets) {
+        try {
+            const r = await fetch('/api/dashboard/command', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ clientId: cid, type: 'run-action', payload: { actionId } })
+            });
+            if (r.ok) ok++; else fail++;
+        } catch (_) { fail++; }
+    }
+    closeModal('modal-actions');
+    if (fail > 0) alert(`Acción "${actionId}" enviada a ${ok}/${ok + fail} clientes (${fail} fallos).`);
 }
 
 // ── Help-request inbox (persistent history) ─────────────────────────────────
@@ -1863,6 +1935,8 @@ function cardInner(c) {
     onclick="openPair('${esc(c.clientId)}','#${c.seqNum} ${displayName}')">👥 Pair</button>
   <button class="card-btn"
     onclick="openFullLive('${esc(c.clientId)}')" title="Ver en directo a pantalla completa">🎥 Live</button>
+  <button class="card-btn"
+    onclick="openActions('${esc(c.clientId)}','#${c.seqNum} ${displayName}')" title="Ejecutar acción remota (Run, Debug, Stop, Compile…)">▶ Acciones</button>
 </div>`;
 }
 
@@ -2091,7 +2165,7 @@ function toggleDrawer() {
 const drawerActions = {
     showAll, hideAll, openHiddenModal, openQuality, pruneOffline, wipeAll,
     selectAll, clearSelection, openSelectCategory,
-    selectionShow, selectionHide,
+    selectionShow, selectionHide, openActionsBulk,
     showHiddenInGrid: showHiddenInGridOn,
     hideHiddenFromGrid,
     openMsgAll: () => openMsg('*', 'todos los clientes'),
