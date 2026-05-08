@@ -409,6 +409,66 @@ body {
 .mo-dot.on  { background: #66BB6A; }
 .mo-dot.off { background: #9E9E9E; }
 
+/* ── Carousel view ─────────────────────────────────────────────────────────── */
+#carousel-wrap { flex: 1; overflow: hidden; padding: 8px; display: none; }
+#carousel-container {
+  display: grid;
+  grid-template-columns: repeat(var(--carousel-cols, 1), 1fr);
+  grid-auto-rows: 1fr;
+  gap: 8px;
+  height: 100%;
+}
+.carousel-cell {
+  position: relative;
+  background: #111;
+  border-radius: 8px;
+  overflow: hidden;
+  min-height: 120px;
+}
+.carousel-cell img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  cursor: zoom-in;
+}
+.carousel-name {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  background: linear-gradient(rgba(0,0,0,.72), rgba(0,0,0,.30));
+  color: #fff;
+  padding: 14px 22px;
+  font-size: clamp(2rem, 6vw, 5.5rem);
+  font-weight: 900;
+  text-align: center;
+  letter-spacing: .5px;
+  text-shadow: 0 3px 8px rgba(0,0,0,.85);
+  line-height: 1.05;
+  pointer-events: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.carousel-seq {
+  display: inline-block;
+  color: #FFD54F;
+  margin-right: .35em;
+  font-weight: 800;
+  opacity: .85;
+}
+.carousel-progress {
+  position: absolute;
+  bottom: 0; left: 0;
+  height: 4px;
+  background: #66BB6A;
+  width: 0%;
+  pointer-events: none;
+  z-index: 2;
+}
+.carousel-empty {
+  grid-column: 1 / -1;
+}
+
 /* ── Empty state ───────────────────────────────────────────────────────────── */
 .empty-state {
   display: flex;
@@ -837,8 +897,9 @@ body {
 
   <div class="tb-sep"></div>
 
-  <button class="mode-btn active" id="btn-grid"   onclick="setView('grid')"><span class="mb-icon">⊞</span><span class="mb-label"> Cuadrícula</span></button>
-  <button class="mode-btn"        id="btn-mosaic" onclick="setView('mosaic')"><span class="mb-icon">⊠</span><span class="mb-label"> Mosaico</span></button>
+  <button class="mode-btn active" id="btn-grid"     onclick="setView('grid')"><span class="mb-icon">⊞</span><span class="mb-label"> Cuadrícula</span></button>
+  <button class="mode-btn"        id="btn-mosaic"   onclick="setView('mosaic')"><span class="mb-icon">⊠</span><span class="mb-label"> Mosaico</span></button>
+  <button class="mode-btn"        id="btn-carousel" onclick="setView('carousel')"><span class="mb-icon">🎠</span><span class="mb-label"> Carrusel</span></button>
 
   <div class="tb-sep"></div>
 
@@ -862,6 +923,19 @@ body {
         <option value="auto">Auto</option>
       </select>
     </label>
+  </div>
+
+  <!-- Carousel controls -->
+  <div class="ctrl" id="carousel-ctrl" style="display:none">
+    <label title="Segundos que se muestra cada pantalla del carrusel">Tiempo:
+      <input type="number" id="carousel-seconds" min="1" max="600" value="8"
+             onchange="setCarouselSeconds(this.value)" style="width:56px"> s
+    </label>
+    <label title="Número de clientes que se muestran simultáneamente en cada pantalla">Por pantalla:
+      <input type="number" id="carousel-per-page" min="1" max="20" value="1"
+             onchange="setCarouselPerPage(this.value)" style="width:48px">
+    </label>
+    <span id="carousel-page-label" style="opacity:.85"></span>
   </div>
 
   <div class="spacer"></div>
@@ -937,6 +1011,11 @@ body {
   <!-- Mosaic view -->
   <div id="mosaic-wrap">
     <div id="mosaic-container" style="--mosaic-cols:2"></div>
+  </div>
+
+  <!-- Carousel view -->
+  <div id="carousel-wrap">
+    <div id="carousel-container" style="--carousel-cols:1"></div>
   </div>
 </div>
 
@@ -1159,7 +1238,7 @@ body {
 
 // ── State ─────────────────────────────────────────────────────────────────────
 let clients         = [];
-let selectedMosaic  = new Set();   // clientIds chosen for mosaic
+let selectedMosaic  = new Set();   // clientIds chosen for mosaic / carousel
 let currentView     = 'grid';
 let thumbSize       = 240;
 let mosaicCols      = '2';
@@ -1168,6 +1247,12 @@ let imgRefreshTimer = null;
 let eventSource     = null;
 let msgTargetId     = null;
 let cfgTargetId     = null;
+
+// Carousel state
+let carouselSeconds = 8;
+let carouselPerPage = 1;
+let carouselTimer   = null;
+let carouselPageIdx = 0;
 
 // ── Hide/show ─────────────────────────────────────────────────────────────────
 let hidden = new Set(JSON.parse(localStorage.getItem('controlex.hidden') || '[]'));
@@ -2162,7 +2247,7 @@ function refreshClientImage(clientId) {
     const url = imgUrl(clientId);
     const sel = CSS.escape(clientId);
     document.querySelectorAll(
-        `.client-card[data-id="${sel}"] img, .mosaic-cell[data-id="${sel}"] img`
+        `.client-card[data-id="${sel}"] img, .mosaic-cell[data-id="${sel}"] img, .carousel-cell[data-id="${sel}"] img`
     ).forEach(img => preloadAndSwap(img, url));
 
     const fullModal = document.getElementById('modal-full');
@@ -2179,7 +2264,7 @@ function setImgRefresh(ms) {
     clearInterval(imgRefreshTimer);
     if (ms > 0) imgRefreshTimer = setInterval(() => {
         const seen = new Set();
-        document.querySelectorAll('.client-card[data-id], .mosaic-cell[data-id]').forEach(el => {
+        document.querySelectorAll('.client-card[data-id], .mosaic-cell[data-id], .carousel-cell[data-id]').forEach(el => {
             const id = el.dataset.id;
             if (id && !seen.has(id)) { seen.add(id); refreshClientImage(id); }
         });
@@ -2197,10 +2282,17 @@ function setView(v) {
     currentView = v;
     document.getElementById('btn-grid').classList.toggle('active', v === 'grid');
     document.getElementById('btn-mosaic').classList.toggle('active', v === 'mosaic');
-    document.getElementById('grid-ctrl').style.display    = v === 'grid'   ? 'flex'  : 'none';
-    document.getElementById('mosaic-ctrl').style.display  = v === 'mosaic' ? 'flex'  : 'none';
-    document.getElementById('grid-wrap').style.display    = v === 'grid'   ? 'block' : 'none';
-    document.getElementById('mosaic-wrap').style.display  = v === 'mosaic' ? 'block' : 'none';
+    document.getElementById('btn-carousel').classList.toggle('active', v === 'carousel');
+    document.getElementById('grid-ctrl').style.display     = v === 'grid'     ? 'flex'  : 'none';
+    document.getElementById('mosaic-ctrl').style.display   = v === 'mosaic'   ? 'flex'  : 'none';
+    document.getElementById('carousel-ctrl').style.display = v === 'carousel' ? 'flex'  : 'none';
+    document.getElementById('grid-wrap').style.display     = v === 'grid'     ? 'block' : 'none';
+    document.getElementById('mosaic-wrap').style.display   = v === 'mosaic'   ? 'block' : 'none';
+    document.getElementById('carousel-wrap').style.display = v === 'carousel' ? 'block' : 'none';
+
+    if (v === 'carousel') startCarousel();
+    else stopCarousel();
+
     render();
 }
 
@@ -2252,6 +2344,7 @@ function updateCount() {
 // ── Render ────────────────────────────────────────────────────────────────────
 function render() {
     if (currentView === 'grid') renderGrid();
+    else if (currentView === 'carousel') renderCarousel();
     else renderMosaic();
 }
 
@@ -2399,7 +2492,7 @@ function cardInner(c) {
          onclick="event.stopPropagation()"
          onchange="toggleSelectClient('${esc(c.clientId)}', this.checked)">
   <button class="card-hide-btn" title="Ocultar cliente" onclick="hideClient('${esc(c.clientId)}')">✕</button>
-  <input class="mosaic-check" type="checkbox" title="Incluir en mosaico"
+  <input class="mosaic-check" type="checkbox" title="Incluir en mosaico / carrusel"
          ${sel ? 'checked' : ''}
          onchange="toggleMosaic('${esc(c.clientId)}', this.checked)">
 </div>
@@ -2514,6 +2607,118 @@ function toggleMosaic(clientId, checked) {
     document.querySelectorAll(`.client-card[data-id="${CSS.escape(clientId)}"]`)
         .forEach(el => el.classList.toggle('selected', checked));
     if (currentView === 'mosaic') renderMosaic();
+    else if (currentView === 'carousel') { carouselPageIdx = 0; renderCarousel(); }
+}
+
+// ·· Carousel ·················································
+function getCarouselTargets() {
+    const visible = clients.filter(c => !hidden.has(c.clientId) && c.online);
+    return selectedMosaic.size
+        ? visible.filter(c => selectedMosaic.has(c.clientId))
+        : visible;
+}
+
+function setCarouselSeconds(v) {
+    carouselSeconds = Math.max(1, Math.min(600, +v || 8));
+    document.getElementById('carousel-seconds').value = carouselSeconds;
+    if (currentView === 'carousel') {
+        if (carouselTimer) clearInterval(carouselTimer);
+        carouselTimer = setInterval(advanceCarousel, carouselSeconds * 1000);
+        renderCarousel();   // restart progress-bar animation at the new duration
+    }
+}
+
+function setCarouselPerPage(v) {
+    carouselPerPage = Math.max(1, Math.min(20, +v || 1));
+    document.getElementById('carousel-per-page').value = carouselPerPage;
+    carouselPageIdx = 0;
+    if (currentView === 'carousel') {
+        document.getElementById('carousel-container')
+            .style.setProperty('--carousel-cols', carouselPerPage > 1 ? 2 : 1);
+        renderCarousel();
+    }
+}
+
+function startCarousel() {
+    stopCarousel();
+    carouselPageIdx = 0;
+    renderCarousel();
+    carouselTimer = setInterval(advanceCarousel, Math.max(1, carouselSeconds) * 1000);
+}
+
+function stopCarousel() {
+    if (carouselTimer) { clearInterval(carouselTimer); carouselTimer = null; }
+}
+
+function advanceCarousel() {
+    const targets = getCarouselTargets();
+    const perPage = Math.max(1, carouselPerPage);
+    const totalPages = Math.max(1, Math.ceil(targets.length / perPage));
+    carouselPageIdx = (carouselPageIdx + 1) % totalPages;
+    renderCarousel();
+}
+
+function renderCarousel() {
+    const cc = document.getElementById('carousel-container');
+    const targets = getCarouselTargets();
+    const perPage = Math.max(1, carouselPerPage);
+    const totalPages = Math.max(1, Math.ceil(targets.length / perPage));
+
+    if (carouselPageIdx >= totalPages) carouselPageIdx = 0;
+
+    const label = document.getElementById('carousel-page-label');
+    if (label) {
+        label.textContent = targets.length
+            ? `· ${targets.length} cliente${targets.length !== 1 ? 's' : ''} · pantalla ${carouselPageIdx + 1}/${totalPages}`
+            : '';
+    }
+
+    if (!targets.length) {
+        cc.innerHTML = `<div class="empty-state carousel-empty">
+            <p>Selecciona clientes en la cuadrícula (☑) para incluirlos en el carrusel.<br>
+            Si no hay ninguno seleccionado se muestran todos.</p>
+        </div>`;
+        cc.style.setProperty('--carousel-cols', 1);
+        return;
+    }
+
+    // Determine columns: 1 per page → 1 col; otherwise up to 3 cols max for readability.
+    const cols = perPage === 1 ? 1 : Math.min(perPage, 3);
+    cc.style.setProperty('--carousel-cols', cols);
+
+    const start = carouselPageIdx * perPage;
+    const pageItems = targets.slice(start, start + perPage);
+
+    // Rebuild DOM (page changes are infrequent, so a full rebuild is fine and
+    // ensures the live frames flow into the new cells via [data-id] selectors).
+    cc.innerHTML = '';
+    const frag = document.createDocumentFragment();
+    for (const c of pageItems) frag.appendChild(buildCarouselCell(c));
+    cc.appendChild(frag);
+
+    // Animate the bottom progress bar of the first cell to indicate elapsed time.
+    const first = cc.querySelector('.carousel-progress');
+    if (first && totalPages > 1) {
+        first.style.transition = 'none';
+        first.style.width = '0%';
+        // Force a reflow so the next transition takes effect
+        // eslint-disable-next-line no-unused-expressions
+        first.offsetHeight;
+        first.style.transition = `width ${Math.max(1, carouselSeconds)}s linear`;
+        first.style.width = '100%';
+    }
+}
+
+function buildCarouselCell(c) {
+    const el = document.createElement('div');
+    el.className = 'carousel-cell';
+    el.dataset.id = c.clientId;
+    const name = c.nickname || c.clientId.slice(0, 8);
+    el.innerHTML = `
+<img src="${imgUrl(c.clientId)}" alt="Captura" onclick="openFull('${esc(c.clientId)}')">
+<div class="carousel-name" title="${esc(name)}"><span class="carousel-seq">#${c.seqNum}</span>${esc(name)}</div>
+<div class="carousel-progress"></div>`;
+    return el;
 }
 
 // ── Full-screen ───────────────────────────────────────────────────────────────
