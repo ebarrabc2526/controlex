@@ -58,6 +58,11 @@ object RemoteCommandHandlers {
                 "show-dialog" -> {
                     val text  = strField("text",  verified) ?: return
                     val title = strField("title", verified) ?: "Mensaje del profesor"
+                    // Compatibilidad: además del popup, deja constancia en el
+                    // chat para que el alumno pueda releer (sobre todo si el
+                    // origen real era un mensaje del profesor enviado desde
+                    // un servidor previo a v3.0.0 que aún emitía show-dialog).
+                    project.service<ChatService>().add("teacher", text)
                     Messages.showInfoMessage(project, text, title)
                 }
                 "chat-message" -> {

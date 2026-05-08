@@ -89,6 +89,19 @@ body {
 .chat-side .csr-unread { background: #43a047; color: #fff; font-size: .65rem; font-weight: 700; padding: 1px 6px; border-radius: 8px; }
 .chat-side .csr-snippet { font-size: .76rem; color: #666; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
 .chat-side .csr-time { font-size: .68rem; color: #999; }
+.chat-side .chat-side-cat {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 10px; background: #e3f2fd; border-bottom: 1px solid #bbdefb;
+  font-size: .78rem; font-weight: 700; color: #1565C0;
+  text-transform: uppercase; letter-spacing: 1px;
+  position: sticky; top: 0; z-index: 1;
+}
+.chat-side .chat-side-cat .chat-cat-check { accent-color: #1565C0; cursor: pointer; }
+.chat-side .chat-side-cat .chat-cat-name { flex: 1; }
+.chat-side .chat-side-cat .chat-cat-count {
+  background: rgba(21,101,192,.15); color: #1565C0;
+  padding: 1px 6px; border-radius: 8px; font-size: .68rem; letter-spacing: 0;
+}
 
 .chat-thread { display: flex; flex-direction: column; overflow: hidden; }
 .chat-thread .ct-header { padding: 8px 12px; border-bottom: 1px solid #eee; background: #fff; font-weight: 700; color: #1565C0; display: flex; justify-content: space-between; align-items: center; }
@@ -1181,39 +1194,96 @@ async function openChat(presetClientId) {
 
 function renderChatSidebar() {
     const side = document.getElementById('chat-side');
-    // Build a unified list: existing summaries + any online client without thread,
-    // so the teacher can start a new conversation with anyone connected.
+    // Sidebar = todos los alumnos online + cualquiera con histórico aunque
+    // esté offline. Después agrupados por categoryMain con un cabecero por
+    // categoría que tiene checkbox bulk (selecciona/deselecciona todos los
+    // alumnos de esa categoría).
     const known = new Set(chatSummaries.map(s => s.clientId));
     const extras = clients.filter(c => c.online && !known.has(c.clientId)).map(c => ({
         clientId: c.clientId, client: c, lastAt: '', lastText: '', lastWho: null, unread: 0, total: 0
     }));
     const all = [...chatSummaries, ...extras];
     if (all.length === 0) {
-        side.innerHTML = '<div style="padding:14px;color:#888;font-size:.85rem">No hay alumnos conectados.</div>';
+        side.innerHTML = '<div style="padding:14px;color:#888;font-size:.85rem">No hay alumnos.</div>';
         document.getElementById('chat-target-count').textContent = chatSelected.size;
         return;
     }
-    side.innerHTML = all.map(s => {
-        const c = s.client || {};
-        const seq = c.seqNum != null ? `#${c.seqNum}` : '';
-        const name = esc(c.nickname || c.osUser || (s.clientId || '').slice(0, 8));
-        const ip = esc(c.ip || '');
-        const snippet = s.lastText ? esc(s.lastText.slice(0, 60)) : '<em style="color:#aaa">(sin mensajes)</em>';
-        const time = s.lastAt ? new Date(s.lastAt).toLocaleTimeString().slice(0, 5) : '';
-        const unread = s.unread > 0 ? `<span class="csr-unread">${s.unread}</span>` : '';
-        const checked = chatSelected.has(s.clientId) ? 'checked' : '';
-        const active = chatActiveClient === s.clientId ? ' is-active' : '';
-        return `
-            <div class="chat-side-row${active}" data-id="${esc(s.clientId)}" onclick="selectChatThread('${esc(s.clientId)}')">
-              <input type="checkbox" ${checked} onclick="event.stopPropagation()" onchange="chatToggleSel('${esc(s.clientId)}',this.checked)">
-              <div class="csr-body">
-                <div class="csr-name">${seq} ${name} ${unread} <span style="flex:1"></span><span class="csr-time">${time}</span></div>
-                <div class="csr-snippet">${s.lastWho === 'teacher' ? '↳ ' : ''}${snippet}</div>
-                <div class="csr-time">${ip}</div>
-              </div>
+    // Agrupar por categoryMain (con clave estable para "(sin categoría)")
+    const groups = new Map();
+    for (const s of all) {
+        const cat = (s.client?.categoryMain) || '(sin categoría)';
+        if (!groups.has(cat)) groups.set(cat, []);
+        groups.get(cat).push(s);
+    }
+    // Orden alfabético de categorías; "(sin categoría)" al final
+    const sortedCats = [...groups.keys()].sort((a, b) => {
+        if (a === '(sin categoría)') return 1;
+        if (b === '(sin categoría)') return -1;
+        return a.localeCompare(b);
+    });
+    let html = '';
+    for (const cat of sortedCats) {
+        const list = groups.get(cat);
+        const ids = list.map(x => x.clientId);
+        const selCount = ids.filter(id => chatSelected.has(id)).length;
+        const allSel = selCount === ids.length && ids.length > 0;
+        const someSel = selCount > 0 && !allSel;
+        html += `
+            <div class="chat-side-cat" data-cat="${esc(cat)}">
+              <input type="checkbox" class="chat-cat-check"
+                     ${allSel ? 'checked' : ''}
+                     onclick="event.stopPropagation()"
+                     onchange="chatToggleCategorySel('${esc(cat)}',this.checked)">
+              <span class="chat-cat-name">${esc(cat)}</span>
+              <span class="chat-cat-count">${list.length}</span>
             </div>`;
-    }).join('');
+        for (const s of list) {
+            const c = s.client || {};
+            const seq = c.seqNum != null ? `#${c.seqNum}` : '';
+            const name = esc(c.nickname || c.osUser || (s.clientId || '').slice(0, 8));
+            const ip = esc(c.ip || '');
+            const snippet = s.lastText ? esc(s.lastText.slice(0, 60)) : '<em style="color:#aaa">(sin mensajes)</em>';
+            const time = s.lastAt ? new Date(s.lastAt).toLocaleTimeString().slice(0, 5) : '';
+            const unread = s.unread > 0 ? `<span class="csr-unread">${s.unread}</span>` : '';
+            const checked = chatSelected.has(s.clientId) ? 'checked' : '';
+            const active = chatActiveClient === s.clientId ? ' is-active' : '';
+            html += `
+                <div class="chat-side-row${active}" data-id="${esc(s.clientId)}" onclick="selectChatThread('${esc(s.clientId)}')">
+                  <input type="checkbox" ${checked} onclick="event.stopPropagation()" onchange="chatToggleSel('${esc(s.clientId)}',this.checked)">
+                  <div class="csr-body">
+                    <div class="csr-name">${seq} ${name} ${unread} <span style="flex:1"></span><span class="csr-time">${time}</span></div>
+                    <div class="csr-snippet">${s.lastWho === 'teacher' ? '↳ ' : ''}${snippet}</div>
+                    <div class="csr-time">${ip}</div>
+                  </div>
+                </div>`;
+        }
+    }
+    side.innerHTML = html;
+    // Indeterminate state se aplica programáticamente
+    for (const cat of sortedCats) {
+        const list = groups.get(cat);
+        const ids = list.map(x => x.clientId);
+        const selCount = ids.filter(id => chatSelected.has(id)).length;
+        const allSel = selCount === ids.length && ids.length > 0;
+        const someSel = selCount > 0 && !allSel;
+        const cb = side.querySelector(`.chat-side-cat[data-cat="${CSS.escape(cat)}"] .chat-cat-check`);
+        if (cb) cb.indeterminate = someSel;
+    }
     document.getElementById('chat-target-count').textContent = chatSelected.size || (chatActiveClient ? 1 : 0);
+}
+
+function chatToggleCategorySel(cat, on) {
+    // Encuentra los clientIds de esta categoría y los marca/desmarca en bulk.
+    const candidates = [...chatSummaries, ...clients
+        .filter(c => c.online && !chatSummaries.find(s => s.clientId === c.clientId))
+        .map(c => ({ clientId: c.clientId, client: c }))];
+    for (const s of candidates) {
+        const c = s.client || {};
+        const sCat = (c.categoryMain) || '(sin categoría)';
+        if (sCat !== cat) continue;
+        if (on) chatSelected.add(s.clientId); else chatSelected.delete(s.clientId);
+    }
+    renderChatSidebar();
 }
 
 function chatToggleSel(clientId, on) {

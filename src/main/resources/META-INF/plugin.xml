@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>es.iesclaradelrey.controlex</id>
     <name>Controlex</name>
-    <version>3.0.0</version>
+    <version>3.0.1</version>
     <vendor email="ebarrabc2526@gmail.com" url="https://iesclaradelrey.es">IES Clara del Rey</vendor>
 
     <description><![CDATA[
@@ -45,7 +45,7 @@
         <toolWindow id="Controlex Chat"
                     anchor="right"
                     factoryClass="es.iesclaradelrey.controlex.ChatToolWindowFactory"
-                    icon="AllIcons.Toolwindows.ToolWindowMessages"/>
+                    icon="/icons/chat.svg"/>
 
         <notificationGroup id="Controlex Chat" displayType="BALLOON"/>
     </extensions>
@@ -63,6 +63,13 @@
                     text="Pedir ayuda al profesor"
                     icon="AllIcons.Actions.Help">
                 <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt H"/>
+            </action>
+            <action id="Controlex.OpenChat"
+                    class="es.iesclaradelrey.controlex.OpenChatAction"
+                    text="Abrir chat con el profesor"
+                    description="Despliega la tool window de chat"
+                    icon="/icons/chat.svg">
+                <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt C"/>
             </action>
             <action id="Controlex.ConfigureName"
                     class="es.iesclaradelrey.controlex.ConfigureNameAction"
