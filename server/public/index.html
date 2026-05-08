@@ -523,6 +523,20 @@ body {
 }
 .full-zoom:hover { background: rgba(255,255,255,.28); }
 .full-zoom.active { background: #ffd54f; color: #1565C0; border-color: #ffd54f; }
+
+.full-laser {
+  position: fixed; top: 14px; right: 158px;
+  width: auto; height: 36px; padding: 0 12px;
+  background: rgba(255,255,255,.16); color: #fff;
+  border: 1px solid rgba(255,255,255,.35); border-radius: 6px;
+  font-size: .82rem; font-weight: 600; cursor: pointer;
+  display: flex; align-items: center; gap: 4px; z-index: 1001;
+}
+.full-laser:hover { background: rgba(255,255,255,.28); }
+.full-laser.active { background: #d32f2f; color: #fff; border-color: #d32f2f; animation: laserPulse 1.2s ease-in-out infinite; }
+@keyframes laserPulse { 0%, 100% { opacity: 1 } 50% { opacity: .65 } }
+.full-img-wrap.is-laser-on { cursor: crosshair; }
+.full-img-wrap.is-laser-on #full-img { cursor: crosshair; }
 #full-info { color: rgba(255,255,255,.8); font-size: .82rem; text-align: center; }
 .full-live-tag {
   display: inline-block; background: #d32f2f; color: #fff;
@@ -1048,6 +1062,7 @@ body {
 <div id="modal-full" class="modal" style="display:none" onclick="closeFull()">
   <button class="full-close" onclick="closeFull()" title="Cerrar (Esc)">✕</button>
   <button class="full-zoom" onclick="event.stopPropagation();toggleFullZoom()" title="Alternar 1:1 / ajustar a pantalla">🔍 1:1</button>
+  <button class="full-laser" onclick="event.stopPropagation();toggleLaser()" title="Puntero láser: mueve el ratón sobre la captura para señalar al alumno">🔴 Láser</button>
   <div class="full-img-wrap" onclick="event.stopPropagation()">
     <img id="full-img" src="" alt="Captura de pantalla">
   </div>
@@ -1466,7 +1481,8 @@ const REMOTE_ACTIONS = [
     { id: 'CompileDirty',          label: '🔨 Compilar',    desc: 'Compilar los cambios' },
     { id: 'SaveAll',               label: '💾 Guardar todo', desc: 'Save All' },
     { id: 'ReformatCode',          label: '🎨 Formatear',   desc: 'Reformat code' },
-    { id: 'ToggleLineBreakpoint',  label: '🔴 Breakpoint',  desc: 'Toggle line breakpoint en la línea actual' }
+    { id: 'ToggleLineBreakpoint',  label: '🔴 Breakpoint',  desc: 'Toggle line breakpoint en la línea actual' },
+    { _custom: 'create-dir',       label: '📁 Crear directorio…', desc: 'Crea un directorio (ruta relativa al proyecto del alumno)' }
 ];
 
 let _actionsTargets = [];   // clientIds objetivo del modal
@@ -1488,11 +1504,41 @@ function openActionsBulk() {
 
 function renderActionsGrid() {
     const grid = document.getElementById('actions-grid');
-    grid.innerHTML = REMOTE_ACTIONS.map(a => `
-        <button onclick="runRemoteAction('${esc(a.id)}')" title="${esc(a.desc)}"
+    grid.innerHTML = REMOTE_ACTIONS.map(a => {
+        const handler = a._custom === 'create-dir' ? 'runCreateDir()' : `runRemoteAction('${esc(a.id)}')`;
+        return `<button onclick="${handler}" title="${esc(a.desc)}"
                 style="padding:10px 14px;font-size:.9rem;background:#fff;border:1px solid #1565C0;color:#1565C0;border-radius:6px;cursor:pointer;text-align:left">
             ${a.label}
-        </button>`).join('');
+        </button>`;
+    }).join('');
+}
+
+async function runCreateDir() {
+    if (!_actionsTargets.length) return;
+    const raw = prompt('Ruta del directorio relativa al proyecto del alumno.\n\nEjemplos:\n  src/main/java/com/empresa/util  (paquete Java)\n  resources/data\n  docs');
+    if (!raw || !raw.trim()) return;
+    // Si parece un paquete Java (com.empresa.util), expandirlo a slashes bajo src/main/java
+    let path = raw.trim();
+    if (/^[a-z][a-z0-9_.]+$/i.test(path) && path.includes('.') && !path.includes('/')) {
+        if (!confirm(`"${path}" parece un paquete Java. ¿Crear como src/main/java/${path.replace(/\./g, '/')}?`)) {
+            // mantener path tal cual
+        } else {
+            path = 'src/main/java/' + path.replace(/\./g, '/');
+        }
+    }
+    let ok = 0, fail = 0;
+    for (const cid of _actionsTargets) {
+        try {
+            const r = await fetch('/api/dashboard/command', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ clientId: cid, type: 'create-dir', payload: { path } })
+            });
+            if (r.ok) ok++; else fail++;
+        } catch (_) { fail++; }
+    }
+    closeModal('modal-actions');
+    alert(`Directorio "${path}" creado en ${ok}/${ok + fail} clientes${fail ? ` (${fail} fallos)` : ''}.`);
 }
 
 async function runRemoteAction(actionId) {
@@ -2487,6 +2533,15 @@ async function openFullLive(clientId) {
 }
 
 function closeFull() {
+    // Si el láser estaba activo, mandar visible:false antes de borrar el dataset.id
+    if (_laserActive) {
+        const fullImg = document.getElementById('full-img');
+        const cid = fullImg?.dataset.id;
+        if (cid) postLaserFireAndForget(cid, { visible: false });
+        _laserActive = false;
+        document.querySelector('.full-laser')?.classList.remove('active');
+        document.querySelector('.full-img-wrap')?.classList.remove('is-laser-on');
+    }
     document.getElementById('modal-full').style.display = 'none';
     const fullImg = document.getElementById('full-img');
     fullImg.src = '';
@@ -2505,6 +2560,77 @@ function toggleFullZoom() {
     btn.classList.toggle('active', on);
     btn.textContent = on ? '🔍 Ajustar' : '🔍 1:1';
 }
+
+// Puntero láser: cuando está activo, los movimientos del ratón sobre la
+// imagen del fullscreen se mandan al plugin como coordenadas fraccionales
+// 0..1, y el plugin pinta un punto rojo en la pantalla del alumno.
+let _laserActive = false;
+let _laserLastSent = 0;
+let _laserPending = null;
+const _laserMinIntervalMs = 50;   // 20 Hz
+
+function toggleLaser() {
+    _laserActive = !_laserActive;
+    const btn = document.querySelector('.full-laser');
+    const wrap = document.querySelector('.full-img-wrap');
+    btn.classList.toggle('active', _laserActive);
+    wrap.classList.toggle('is-laser-on', _laserActive);
+    if (!_laserActive) {
+        // Notificar al plugin que oculte el puntero
+        sendLaserCommand({ visible: false });
+    }
+}
+
+function laserMouseMove(e) {
+    if (!_laserActive) return;
+    const img = document.getElementById('full-img');
+    const rect = img.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+    const cx = e.clientX - rect.left;
+    const cy = e.clientY - rect.top;
+    if (cx < 0 || cy < 0 || cx > rect.width || cy > rect.height) return;
+    const fx = cx / rect.width, fy = cy / rect.height;
+    sendLaserCommand({ visible: true, x: fx, y: fy });
+}
+
+function sendLaserCommand(payload) {
+    const fullImg = document.getElementById('full-img');
+    const cid = fullImg?.dataset.id;
+    if (!cid) return;
+    if (payload.visible) {
+        const now = performance.now();
+        if (now - _laserLastSent < _laserMinIntervalMs) {
+            // Throttle: descarta y planifica el último frame para más tarde
+            clearTimeout(_laserPending);
+            _laserPending = setTimeout(() => {
+                _laserLastSent = performance.now();
+                _laserPending = null;
+                postLaserFireAndForget(cid, payload);
+            }, _laserMinIntervalMs - (now - _laserLastSent));
+            return;
+        }
+        _laserLastSent = now;
+    }
+    postLaserFireAndForget(cid, payload);
+}
+
+function postLaserFireAndForget(cid, payload) {
+    fetch('/api/dashboard/command', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientId: cid, type: 'laser-pointer', payload })
+    }).catch(() => {});
+}
+
+// Hooks: imagen del fullscreen
+document.addEventListener('DOMContentLoaded', () => {
+    const img = document.getElementById('full-img');
+    if (!img) return;
+    img.addEventListener('mousemove', laserMouseMove);
+    img.addEventListener('mouseleave', () => {
+        if (_laserActive) sendLaserCommand({ visible: false });
+    });
+});
 
 // ── Message dialog ────────────────────────────────────────────────────────────
 function openMsg(clientId, label, _a, _b, _c) {

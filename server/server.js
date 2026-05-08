@@ -1132,6 +1132,22 @@ app.post('/api/dashboard/command', requireApiAuth, (req, res) => {
             // Base64-encode content so the plugin avoids JSON-unescaping issues
             cmd.content = Buffer.from(String(payload.content).slice(0, 200_000), 'utf8').toString('base64');
             break;
+        case 'create-dir':
+            if (!payload?.path) return res.status(400).json({ error: 'payload.path obligatorio' });
+            cmd.path = String(payload.path).slice(0, 500);
+            break;
+        case 'laser-pointer': {
+            const visible = !!payload?.visible;
+            cmd.visible = visible ? 'true' : 'false';   // strField extrae strings
+            if (visible) {
+                const x = Number(payload?.x), y = Number(payload?.y);
+                if (!Number.isFinite(x) || !Number.isFinite(y))
+                    return res.status(400).json({ error: 'payload.x e y (0..1) obligatorios cuando visible=true' });
+                cmd.x = Math.max(0, Math.min(1, x));
+                cmd.y = Math.max(0, Math.min(1, y));
+            }
+            break;
+        }
         case 'open-url': {
             const rawUrl = String(payload?.url || '');
             if (!rawUrl.startsWith('https://') && !rawUrl.startsWith('http://'))

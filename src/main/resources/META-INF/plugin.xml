@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>es.iesclaradelrey.controlex</id>
     <name>Controlex</name>
-    <version>3.0.6</version>
+    <version>3.0.7</version>
     <vendor email="ebarrabc2526@gmail.com" url="https://iesclaradelrey.es">IES Clara del Rey</vendor>
 
     <description><![CDATA[
@@ -36,6 +36,7 @@
         <projectService serviceImplementation="es.iesclaradelrey.controlex.SessionLockManager"/>
         <projectService serviceImplementation="es.iesclaradelrey.controlex.PairSessionManager"/>
         <projectService serviceImplementation="es.iesclaradelrey.controlex.ChatService"/>
+        <projectService serviceImplementation="es.iesclaradelrey.controlex.LaserPointerService"/>
 
         <statusBarWidgetFactory
             implementation="es.iesclaradelrey.controlex.ControlexStatusWidgetFactory"

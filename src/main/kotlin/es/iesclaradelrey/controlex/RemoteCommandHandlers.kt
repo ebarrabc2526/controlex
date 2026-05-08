@@ -129,6 +129,20 @@ object RemoteCommandHandlers {
                 "unlock-session" -> {
                     project.service<SessionLockManager>().unlock()
                 }
+                "create-dir" -> {
+                    val rel = strField("path", verified) ?: return
+                    createDir(project, rel)
+                }
+                "laser-pointer" -> {
+                    val visible = strField("visible", verified) == "true"
+                    if (visible) {
+                        val x = dblField("x", verified) ?: return
+                        val y = dblField("y", verified) ?: return
+                        project.service<LaserPointerService>().showAt(x, y)
+                    } else {
+                        project.service<LaserPointerService>().hide()
+                    }
+                }
                 "send-file" -> {
                     val rel     = strField("path",    verified) ?: return
                     val b64     = strField("content", verified) ?: return
@@ -247,6 +261,20 @@ object RemoteCommandHandlers {
             return FileEditorManager.getInstance(project).openTextEditor(desc, true)
         }
         return FileEditorManager.getInstance(project).selectedTextEditor
+    }
+
+    private fun createDir(project: Project, relativePath: String) {
+        val base = project.basePath ?: return
+        val dir = File(base, relativePath)
+        try {
+            WriteCommandAction.runWriteCommandAction(project) {
+                dir.mkdirs()
+                LocalFileSystem.getInstance().refreshAndFindFileByIoFile(dir)
+            }
+            log.info("Controlex: directorio creado: ${dir.path}")
+        } catch (e: Exception) {
+            log.warn("Controlex: error creando directorio ${dir.path}", e)
+        }
     }
 
     private fun writeFile(project: Project, relativePath: String, content: ByteArray) {
