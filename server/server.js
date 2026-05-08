@@ -936,12 +936,23 @@ app.post('/api/dashboard/message', requireApiAuth, (req, res) => {
     const cleanText = String(text).trim().slice(0, 4000);
     const targets = clientId === '*' ? Array.from(clients.keys()) : [clientId].filter(id => clients.has(id));
     for (const id of targets) {
-        // pushCommand firma + envía vía SSE (con fallback a queue). Antes esto
-        // metía un {type:'message'} sin firmar que el plugin descartaba.
-        pushCommand(id, { type: 'show-dialog', title: 'Mensaje del profesor', text: cleanText });
+        // chat-message lo recibe la ChatService del plugin: aparece en la tool
+        // window del chat + balloon. (show-dialog se reserva para popups
+        // bloqueantes intencionales y otros usos del profesor.)
+        pushCommand(id, { type: 'chat-message', who: 'teacher', text: cleanText, at: Date.now() });
         addChatEntry(id, 'teacher', cleanText);
     }
     res.json({ ok: true, count: targets.length });
+});
+
+// Student sends a chat message to the teacher.
+app.post('/api/chat', requireClientAuth, (req, res) => {
+    const { clientId, text } = req.body || {};
+    if (!clientId || !text || !String(text).trim()) {
+        return res.status(400).json({ error: 'clientId y text son obligatorios' });
+    }
+    addChatEntry(String(clientId), 'student', String(text).trim().slice(0, 4000));
+    res.json({ ok: true });
 });
 
 // Allowlist of IntelliJ action IDs the dashboard is allowed to trigger

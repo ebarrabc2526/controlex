@@ -15,6 +15,10 @@ import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.vfs.LocalFileSystem
+import com.intellij.notification.NotificationGroupManager
+import com.intellij.notification.NotificationType
+import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.wm.ToolWindowManager
 import com.intellij.openapi.wm.WindowManager
 import java.awt.GraphicsEnvironment
 import java.awt.Robot
@@ -55,6 +59,13 @@ object RemoteCommandHandlers {
                     val text  = strField("text",  verified) ?: return
                     val title = strField("title", verified) ?: "Mensaje del profesor"
                     Messages.showInfoMessage(project, text, title)
+                }
+                "chat-message" -> {
+                    val text = strField("text", verified) ?: return
+                    val at   = numField("at",   verified) ?: System.currentTimeMillis()
+                    val who  = strField("who",  verified) ?: "teacher"
+                    project.service<ChatService>().add(who, text, at)
+                    notifyTeacherChat(project, text)
                 }
                 "open-file" -> {
                     val rel  = strField("path", verified) ?: return
@@ -149,6 +160,26 @@ object RemoteCommandHandlers {
             }
         } catch (e: Exception) {
             log.warn("Controlex: error ejecutando comando remoto", e)
+        }
+    }
+
+    private fun notifyTeacherChat(project: Project, text: String) {
+        ApplicationManager.getApplication().invokeLater {
+            try {
+                NotificationGroupManager.getInstance()
+                    .getNotificationGroup("Controlex Chat")
+                    .createNotification(
+                        "Mensaje del profesor",
+                        text.take(200) + if (text.length > 200) "…" else "",
+                        NotificationType.INFORMATION
+                    )
+                    .notify(project)
+            } catch (_: Throwable) { /* el notificationGroup puede no estar registrado en algunos IDE viejos */ }
+            // Hacer pop a la tool window para que el alumno la vea sin tener
+            // que buscarla manualmente.
+            try {
+                ToolWindowManager.getInstance(project).getToolWindow("Controlex Chat")?.show(null)
+            } catch (_: Throwable) {}
         }
     }
 
