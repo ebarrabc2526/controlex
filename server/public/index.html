@@ -2481,7 +2481,12 @@ function buildEditor() {
                 if (inserted.length > 0) ops.push({ opType: 'insert', offset: fromB, text: inserted.toString() });
             });
             if (ops.length) {
-                pairWs.send(JSON.stringify({ type: 'edit', baseVersion: pairVersion, ops }));
+                // path es OBLIGATORIO en el plugin (PairSessionManager.handleIncoming
+                // hace `field("path", json) ?: return` y descarta el mensaje si no
+                // viene). Sin esto los edits del profesor se relayaban al plugin
+                // pero se caían en silencio.
+                const path = document.getElementById('pair-path').value.trim();
+                pairWs.send(JSON.stringify({ type: 'edit', path, baseVersion: pairVersion, ops }));
             }
         }
     });
@@ -2492,7 +2497,8 @@ function buildEditor() {
         clearTimeout(pairCursorTimer);
         pairCursorTimer = setTimeout(() => {
             const offset = update.state.selection.main.head;
-            pairWs.send(JSON.stringify({ type: 'cursor', offset }));
+            const path = document.getElementById('pair-path').value.trim();
+            pairWs.send(JSON.stringify({ type: 'cursor', path, offset }));
         }, 30);
     });
 

@@ -114,7 +114,7 @@ class PairSessionManager(private val project: Project) : Disposable {
             val caretListener = object : CaretListener {
                 override fun caretPositionChanged(event: CaretEvent) {
                     val offset = editor.caretModel.offset
-                    sendJson("""{"type":"cursor","path":${q(relativePath)},"offset":$offset}""")
+                    sendJson("""{"type":"cursor","who":"student","path":${q(relativePath)},"offset":$offset}""")
                 }
             }
             editor.caretModel.addCaretListener(caretListener)
