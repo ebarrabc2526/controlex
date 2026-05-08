@@ -338,26 +338,42 @@ object RemoteCommandHandlers {
                 3 -> InputEvent.BUTTON3_DOWN_MASK
                 else -> InputEvent.BUTTON1_DOWN_MASK
             }
-            // Enfocar la ventana de IntelliJ antes del click. Sin esto, en
-            // configuraciones donde otra app tenga el foco (caso típico:
-            // pruebas en el mismo equipo con el panel en Chrome), el primer
-            // click iría sólo a activar la ventana sin abrir menús, etc.
+            // Forzar IntelliJ al frente antes del click. En Windows el
+            // simple toFront() puede ser ignorado por la protección anti
+            // focus-stealing si Chrome (o cualquier otra app) está en
+            // foreground; además, si Chrome está cubriendo visualmente el
+            // área del IDE, el click acaba yendo a Chrome (es el SO el que
+            // routea el evento por z-order y posición).
+            //
+            // Truco: poner alwaysOnTop=true momentáneamente. Eso bypasea la
+            // protección anti foco. Lo quitamos después del click para no
+            // dejar IntelliJ siempre encima.
             val frame = WindowManager.getInstance().getFrame(project)
             if (frame != null) {
-                javax.swing.SwingUtilities.invokeLater {
+                javax.swing.SwingUtilities.invokeAndWait {
                     try {
+                        if (frame.state == java.awt.Frame.ICONIFIED) frame.state = java.awt.Frame.NORMAL
+                        frame.isAlwaysOnTop = true
                         frame.toFront()
                         frame.requestFocus()
                     } catch (_: Throwable) {}
                 }
-                Thread.sleep(80)
+                // Esperar a que el WM procese la elevación.
+                Thread.sleep(120)
             }
             val robot = Robot()
             robot.mouseMove(screenX, screenY)
-            robot.delay(60)
+            robot.delay(80)
             robot.mousePress(mask)
             robot.delay(60)
             robot.mouseRelease(mask)
+            // Quitar alwaysOnTop poco después del click para no estorbar
+            // al alumno el resto del rato.
+            if (frame != null) {
+                javax.swing.SwingUtilities.invokeLater {
+                    try { frame.isAlwaysOnTop = false } catch (_: Throwable) {}
+                }
+            }
         } catch (e: Exception) {
             log.warn("Controlex: error en inject-click", e)
         }
