@@ -2585,22 +2585,61 @@ function toggleLaser() {
     btn.classList.toggle('active', _laserActive);
     wrap.classList.toggle('is-laser-on', _laserActive);
     if (_laserActive) {
-        // Solo enganchamos los listeners cuando el láser está activo —
-        // así nada interfiere con el flujo normal de openFull / live.
         img.addEventListener('mousemove', laserMouseMove);
         img.addEventListener('mouseleave', laserMouseLeave);
-        img.addEventListener('mousedown', laserMouseDown);
+        // Click izquierdo → click event (universal, no le afecta el image-drag).
+        img.addEventListener('click', laserClick);
+        // Click derecho → contextmenu event (preventDefault para no abrir
+        // el menú nativo del navegador).
         img.addEventListener('contextmenu', laserContextMenu);
+        // Click medio → auxclick (button=1 en DOM).
+        img.addEventListener('auxclick', laserAuxClick);
     } else {
         img.removeEventListener('mousemove', laserMouseMove);
         img.removeEventListener('mouseleave', laserMouseLeave);
-        img.removeEventListener('mousedown', laserMouseDown);
+        img.removeEventListener('click', laserClick);
         img.removeEventListener('contextmenu', laserContextMenu);
+        img.removeEventListener('auxclick', laserAuxClick);
         sendLaserCommand({ visible: false });
     }
 }
 function laserMouseLeave() { if (_laserActive) sendLaserCommand({ visible: false }); }
-function laserContextMenu(e) { if (_laserActive) e.preventDefault(); }
+function laserClick(e) {
+    if (!_laserActive) return;
+    e.preventDefault(); e.stopPropagation();
+    sendInjectClick(e, 1);   // 1 = LEFT en plugin
+}
+function laserContextMenu(e) {
+    if (!_laserActive) return;
+    e.preventDefault(); e.stopPropagation();
+    sendInjectClick(e, 3);   // 3 = RIGHT en plugin
+}
+function laserAuxClick(e) {
+    if (!_laserActive) return;
+    if (e.button !== 1) return;   // solo botón medio
+    e.preventDefault(); e.stopPropagation();
+    sendInjectClick(e, 2);   // 2 = MIDDLE en plugin
+}
+
+function sendInjectClick(e, pluginButton) {
+    const img = document.getElementById('full-img');
+    const rect = img.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+    const fx = (e.clientX - rect.left) / rect.width;
+    const fy = (e.clientY - rect.top) / rect.height;
+    if (fx < 0 || fy < 0 || fx > 1 || fy > 1) return;
+    const cid = img.dataset.id;
+    if (!cid) return;
+    fetch('/api/dashboard/command', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            clientId: cid,
+            type: 'inject-click',
+            payload: { normX: fx, normY: fy, button: pluginButton }
+        })
+    }).catch(() => {});
+}
 
 function laserMouseMove(e) {
     if (!_laserActive) return;
@@ -2647,31 +2686,8 @@ function postLaserFireAndForget(cid, payload) {
 // toggleLaser() — así cuando el modo láser está apagado, el flujo normal
 // del fullscreen y del live no se ve afectado por nada que añadiéramos.
 
-function laserMouseDown(e) {
-    if (!_laserActive) return;
-    e.preventDefault();
-    e.stopPropagation();
-    const img = document.getElementById('full-img');
-    const rect = img.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) return;
-    const fx = (e.clientX - rect.left) / rect.width;
-    const fy = (e.clientY - rect.top) / rect.height;
-    if (fx < 0 || fy < 0 || fx > 1 || fy > 1) return;
-    // DOM MouseEvent.button: 0=izquierdo, 1=medio, 2=derecho.
-    // Plugin (Robot.mousePress): 1=izquierdo, 2=medio, 3=derecho.
-    const button = e.button === 0 ? 1 : e.button === 2 ? 3 : 2;
-    const cid = img.dataset.id;
-    if (!cid) return;
-    fetch('/api/dashboard/command', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            clientId: cid,
-            type: 'inject-click',
-            payload: { normX: fx, normY: fy, button }
-        })
-    }).catch(() => {});
-}
+// laserMouseDown reemplazado por laserClick / laserContextMenu / laserAuxClick
+// (eventos más universales que mousedown — no los come ningún drag handler).
 
 // ── Message dialog ────────────────────────────────────────────────────────────
 function openMsg(clientId, label, _a, _b, _c) {
