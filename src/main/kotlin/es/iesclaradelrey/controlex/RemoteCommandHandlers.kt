@@ -333,57 +333,81 @@ object RemoteCommandHandlers {
             if (bounds.isEmpty) bounds = ge.defaultScreenDevice.defaultConfiguration.bounds
             val screenX = (bounds.x + normX * bounds.width).toInt()
             val screenY = (bounds.y + normY * bounds.height).toInt()
+
+            val frame = WindowManager.getInstance().getFrame(project)
+            // Si el click cae DENTRO de la ventana de IntelliJ, lo despachamos
+            // como evento Swing directamente al componente destino. Esto
+            // bypasea por completo el SO: no necesita que IntelliJ tenga
+            // foreground, ni hace falta luchar contra la anti-focus-stealing
+            // protection de Windows. El menú/botón recibe el MouseEvent y
+            // responde como si el alumno hubiera hecho click.
+            if (frame != null) {
+                val frameLoc = try { frame.locationOnScreen } catch (_: Throwable) { null }
+                if (frameLoc != null
+                        && screenX >= frameLoc.x && screenX < frameLoc.x + frame.width
+                        && screenY >= frameLoc.y && screenY < frameLoc.y + frame.height) {
+                    dispatchSyntheticClick(frame, screenX - frameLoc.x, screenY - frameLoc.y, button)
+                    return
+                }
+            }
+
+            // Fallback: el click cae fuera de la ventana de IntelliJ o no
+            // tenemos frame. Recurrimos a Robot.mousePress (sí depende del
+            // foreground del SO; en clase real, donde el alumno tiene el
+            // IDE en pantalla, esto va bien).
             val mask = when (button) {
                 2 -> InputEvent.BUTTON2_DOWN_MASK
                 3 -> InputEvent.BUTTON3_DOWN_MASK
                 else -> InputEvent.BUTTON1_DOWN_MASK
             }
             val robot = Robot()
-            // Combinación de trucos para vencer la protección anti-focus-
-            // stealing del SO (especialmente Windows) y asegurar que el
-            // click llegue al IDE aunque Chrome u otra app esté en foreground:
-            //
-            //   1. Pulsar Alt brevemente — resetea el foreground-lock del
-            //      sistema, lo que permite que la elevación posterior surta
-            //      efecto. (Truco bien conocido en programación Win32.)
-            //   2. Poner alwaysOnTop=true momentáneamente + toFront() +
-            //      requestFocus() para forzar que la ventana de IntelliJ
-            //      se eleve por encima de la app que estuviera tapándola.
-            //   3. Esperar a que el WM procese la elevación.
-            //   4. Inyectar el mouseMove + mousePress + mouseRelease.
-            //   5. Quitar alwaysOnTop tras el click.
-            try {
-                robot.keyPress(java.awt.event.KeyEvent.VK_ALT)
-                robot.keyRelease(java.awt.event.KeyEvent.VK_ALT)
-            } catch (_: Throwable) {}
-            robot.delay(40)
-
-            val frame = WindowManager.getInstance().getFrame(project)
-            if (frame != null) {
-                javax.swing.SwingUtilities.invokeAndWait {
-                    try {
-                        if (frame.state == java.awt.Frame.ICONIFIED) frame.state = java.awt.Frame.NORMAL
-                        frame.isAlwaysOnTop = true
-                        frame.toFront()
-                        frame.requestFocus()
-                    } catch (_: Throwable) {}
-                }
-                Thread.sleep(180)
-            }
-
             robot.mouseMove(screenX, screenY)
-            robot.delay(80)
+            robot.delay(60)
             robot.mousePress(mask)
             robot.delay(60)
             robot.mouseRelease(mask)
-
-            if (frame != null) {
-                javax.swing.SwingUtilities.invokeLater {
-                    try { frame.isAlwaysOnTop = false } catch (_: Throwable) {}
-                }
-            }
         } catch (e: Exception) {
             log.warn("Controlex: error en inject-click", e)
+        }
+    }
+
+    /**
+     * Despacha un click sintético al componente Swing que ocupe la posición
+     * (xInFrame, yInFrame) dentro del [frame]. Genera la secuencia estándar
+     * MOUSE_PRESSED → MOUSE_RELEASED → MOUSE_CLICKED y, para botón derecho,
+     * además dispara isPopupTrigger en pressed/released para que los menús
+     * contextuales se abran.
+     */
+    private fun dispatchSyntheticClick(frame: javax.swing.JFrame, xInFrame: Int, yInFrame: Int, button: Int) {
+        com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater {
+            try {
+                val root: java.awt.Component = frame.layeredPane
+                val target = javax.swing.SwingUtilities.getDeepestComponentAt(root, xInFrame, yInFrame) ?: return@invokeLater
+                val pt = javax.swing.SwingUtilities.convertPoint(root, xInFrame, yInFrame, target)
+                val swingBtn = when (button) {
+                    2 -> java.awt.event.MouseEvent.BUTTON2
+                    3 -> java.awt.event.MouseEvent.BUTTON3
+                    else -> java.awt.event.MouseEvent.BUTTON1
+                }
+                val mods = when (button) {
+                    2 -> InputEvent.BUTTON2_DOWN_MASK
+                    3 -> InputEvent.BUTTON3_DOWN_MASK
+                    else -> InputEvent.BUTTON1_DOWN_MASK
+                }
+                val isPopup = button == 3
+                val now = System.currentTimeMillis()
+                target.dispatchEvent(java.awt.event.MouseEvent(
+                    target, java.awt.event.MouseEvent.MOUSE_PRESSED, now,
+                    mods, pt.x, pt.y, 1, isPopup, swingBtn))
+                target.dispatchEvent(java.awt.event.MouseEvent(
+                    target, java.awt.event.MouseEvent.MOUSE_RELEASED, now + 30,
+                    mods, pt.x, pt.y, 1, isPopup, swingBtn))
+                target.dispatchEvent(java.awt.event.MouseEvent(
+                    target, java.awt.event.MouseEvent.MOUSE_CLICKED, now + 30,
+                    mods, pt.x, pt.y, 1, false, swingBtn))
+            } catch (e: Exception) {
+                log.warn("Controlex: error en synthetic click dispatch", e)
+            }
         }
     }
 
