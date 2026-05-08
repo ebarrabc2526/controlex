@@ -65,7 +65,10 @@ object RemoteCommandHandlers {
                     val text = strField("text", verified) ?: return
                     val at   = numField("at",   verified) ?: System.currentTimeMillis()
                     val who  = strField("who",  verified) ?: "teacher"
-                    project.service<ChatService>().add(who, text, at)
+                    val ak   = strField("attachKind",     verified)
+                    val af   = strField("attachFilename", verified)
+                    val ap   = strField("attachPath",     verified)
+                    project.service<ChatService>().add(who, text, at, ak, af, ap)
                     notifyTeacherChat(project, text)
                 }
                 "open-file" -> {
@@ -158,9 +161,13 @@ object RemoteCommandHandlers {
                                   catch (_: Exception) { return }
                     writeFile(project, rel, content)
                     val name = rel.substringAfterLast('/').substringAfterLast('\\')
-                    project.service<ChatService>().add("teacher",
-                        "📎 Recibido: $name (${content.size / 1024} KB) → $rel")
-                    // Despliega la tool window para que el alumno lo vea
+                    project.service<ChatService>().add(
+                        who = "teacher",
+                        text = "📎 Recibido: $name (${content.size / 1024} KB)",
+                        attachKind = "teacher-send",
+                        attachFilename = name,
+                        attachPath = rel
+                    )
                     try {
                         ApplicationManager.getApplication().invokeLater {
                             ToolWindowManager.getInstance(project).getToolWindow("Controlex Chat")?.show(null)

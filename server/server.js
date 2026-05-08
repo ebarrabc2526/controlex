@@ -752,7 +752,7 @@ function persistChat() {
     try { fs.writeFileSync(CHAT_PATH, JSON.stringify(chatStore)); }
     catch (e) { console.warn('[controlex] chat persist:', e.message); }
 }
-function addChatEntry(clientId, who, text) {
+function addChatEntry(clientId, who, text, attachment) {
     if (!chatStore[clientId]) chatStore[clientId] = [];
     const entry = {
         id:   crypto.randomBytes(6).toString('hex'),
@@ -760,6 +760,7 @@ function addChatEntry(clientId, who, text) {
         at:   new Date().toISOString(),
         read: who === 'teacher'   // teacher's own messages are auto-read
     };
+    if (attachment && typeof attachment === 'object') entry.attachment = attachment;
     chatStore[clientId].push(entry);
     if (chatStore[clientId].length > MAX_CHAT_ENTRIES_PER_CLIENT) {
         chatStore[clientId].splice(0, chatStore[clientId].length - MAX_CHAT_ENTRIES_PER_CLIENT);
@@ -971,10 +972,18 @@ app.post('/api/dashboard/send-file', requireApiAuth, (req, res) => {
     let sent = 0;
     for (const cid of clientIds) {
         const ok1 = pushCommand(cid, { type: 'send-file', path: finalPath, content: String(contentB64) });
-        const ok2 = pushCommand(cid, { type: 'chat-message', who: 'teacher',
-                                        text: `📎 Fichero recibido: ${safeName}`, at: Date.now() });
+        const ok2 = pushCommand(cid, {
+            type: 'chat-message', who: 'teacher',
+            text: `📎 Fichero recibido: ${safeName}`,
+            at: Date.now(),
+            attachKind: 'teacher-send',
+            attachFilename: safeName,
+            attachPath: finalPath
+        });
         if (ok1) sent++;
-        addChatEntry(cid, 'teacher', `📎 Fichero enviado: ${safeName} → ${finalPath}`);
+        addChatEntry(cid, 'teacher', `📎 Fichero enviado: ${safeName} → ${finalPath}`, {
+            kind: 'teacher-send', filename: safeName, path: finalPath
+        });
     }
     res.json({ ok: true, sent, total: clientIds.length });
 });
@@ -994,7 +1003,9 @@ app.post('/api/upload-file', requireClientAuth, (req, res) => {
         const fname = `${ts}_${safeName}`;
         const data = Buffer.from(String(contentB64), 'base64');
         fs.writeFileSync(path.join(dir, fname), data);
-        addChatEntry(String(clientId), 'student', `📎 Fichero enviado: ${safeName} (${(data.length / 1024).toFixed(1)} KB)`);
+        addChatEntry(String(clientId), 'student', `📎 Fichero enviado: ${safeName} (${(data.length / 1024).toFixed(1)} KB)`, {
+            kind: 'student-upload', filename: fname, displayName: safeName, size: data.length
+        });
         res.json({ ok: true, savedAs: fname });
     } catch (e) {
         console.warn('[controlex] upload-file error:', e.message);

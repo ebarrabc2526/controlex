@@ -41,10 +41,16 @@ class ChatToolWindowFactory : ToolWindowFactory {
             contentType = "text/html"
             editorKit = HTMLEditorKit()
             border = BorderFactory.createEmptyBorder(8, 8, 8, 8)
-            // Respeta el tema de IntelliJ — JBColor.background() devuelve
-            // claro/oscuro según el LAF activo.
             background = JBColor.background()
             putClientProperty(JEditorPane.HONOR_DISPLAY_PROPERTIES, true)
+            addHyperlinkListener { e ->
+                if (e.eventType != javax.swing.event.HyperlinkEvent.EventType.ACTIVATED) return@addHyperlinkListener
+                val href = e.description ?: return@addHyperlinkListener
+                if (href.startsWith("open:")) {
+                    val rel = href.removePrefix("open:")
+                    openFileInEditor(project, rel)
+                }
+            }
         }
         val scroll = JBScrollPane(pane).apply {
             verticalScrollBar.unitIncrement = 16
@@ -98,11 +104,17 @@ class ChatToolWindowFactory : ToolWindowFactory {
                 for (m in msgs) {
                     val time = tf.format(Date(m.at))
                     val text = htmlEscape(m.text).replace("\n", "<br>")
+                    // Si trae attachment del profesor (kind=teacher-send) añadimos
+                    // un link "Abrir" al final del texto que el alumno puede
+                    // pulsar para abrir el fichero en el editor.
+                    val openLink = if (m.attachKind == "teacher-send" && m.attachPath != null) {
+                        """<br><font color="#0D47A1">↗ <a href="open:${htmlEscape(m.attachPath!!)}" style="color:#0D47A1">Abrir ${htmlEscape(m.attachFilename ?: m.attachPath!!)}</a></font>"""
+                    } else ""
                     if (m.who == "teacher") {
                         sb.append("""<tr><td align="left">
                             |<table cellspacing="0" cellpadding="6" border="0" bgcolor="#E3F2FD"><tr><td>
                             |<font color="#0D47A1"><b>Profesor</b></font><br>
-                            |<font color="#0D47A1">$text</font>
+                            |<font color="#0D47A1">$text</font>$openLink
                             |<br><font color="#888888" size="2">$time</font>
                             |</td></tr></table></td><td width="20%">&nbsp;</td></tr>""".trimMargin())
                     } else {
@@ -174,4 +186,17 @@ class ChatToolWindowFactory : ToolWindowFactory {
     private fun htmlEscape(s: String): String =
         s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
          .replace("\"", "&quot;").replace("'", "&#39;")
+
+    private fun openFileInEditor(project: Project, relativePath: String) {
+        com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater {
+            try {
+                val base = project.basePath ?: return@invokeLater
+                val ioFile = java.io.File(base, relativePath)
+                val vf = com.intellij.openapi.vfs.LocalFileSystem.getInstance()
+                    .refreshAndFindFileByIoFile(ioFile) ?: return@invokeLater
+                com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project)
+                    .openFile(vf, true)
+            } catch (_: Throwable) {}
+        }
+    }
 }

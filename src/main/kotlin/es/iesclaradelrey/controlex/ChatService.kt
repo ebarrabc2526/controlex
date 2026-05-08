@@ -27,7 +27,13 @@ class ChatService(private val project: Project) : Disposable {
         File(home, ".${ControlexConfig.DIR_NAME}/chat.json")
     }
 
-    data class Message(val id: String, val who: String, val text: String, val at: Long)
+    /** [attachPath] = ruta relativa al proyecto donde está el fichero adjunto (solo para mensajes del profesor con send-file). */
+    data class Message(
+        val id: String, val who: String, val text: String, val at: Long,
+        val attachKind: String? = null,
+        val attachFilename: String? = null,
+        val attachPath: String? = null
+    )
 
     private val messages = mutableListOf<Message>()
     private val listeners = CopyOnWriteArrayList<(Message) -> Unit>()
@@ -36,8 +42,9 @@ class ChatService(private val project: Project) : Disposable {
 
     fun all(): List<Message> = synchronized(messages) { messages.toList() }
 
-    fun add(who: String, text: String, at: Long = System.currentTimeMillis()): Message {
-        val m = Message(UUID.randomUUID().toString(), who, text, at)
+    fun add(who: String, text: String, at: Long = System.currentTimeMillis(),
+            attachKind: String? = null, attachFilename: String? = null, attachPath: String? = null): Message {
+        val m = Message(UUID.randomUUID().toString(), who, text, at, attachKind, attachFilename, attachPath)
         synchronized(messages) {
             messages.add(m)
             if (messages.size > MAX) messages.subList(0, messages.size - MAX).clear()
@@ -76,7 +83,6 @@ class ChatService(private val project: Project) : Disposable {
         try {
             if (!file.exists()) return
             val txt = file.readText()
-            // Parser naive de un array de objetos {id, who, text, at}.
             val objRegex = Regex("""\{[^{}]*\}""")
             for (m in objRegex.findAll(txt)) {
                 val obj = m.value
@@ -84,7 +90,10 @@ class ChatService(private val project: Project) : Disposable {
                 val who  = strField("who",  obj) ?: continue
                 val text = strField("text", obj) ?: continue
                 val at   = numField("at",   obj) ?: continue
-                synchronized(messages) { messages.add(Message(id, who, text, at)) }
+                val ak   = strField("attachKind",     obj)
+                val af   = strField("attachFilename", obj)
+                val ap   = strField("attachPath",     obj)
+                synchronized(messages) { messages.add(Message(id, who, text, at, ak, af, ap)) }
             }
         } catch (e: Exception) {
             log.warn("Controlex: chat.json load: ${e.message}")
@@ -96,7 +105,12 @@ class ChatService(private val project: Project) : Disposable {
             file.parentFile?.mkdirs()
             val snap = synchronized(messages) { messages.toList() }
             val body = snap.joinToString(",") {
-                """{"id":${q(it.id)},"who":${q(it.who)},"text":${q(it.text)},"at":${it.at}}"""
+                val extra = buildString {
+                    if (it.attachKind     != null) append(",\"attachKind\":${q(it.attachKind)}")
+                    if (it.attachFilename != null) append(",\"attachFilename\":${q(it.attachFilename)}")
+                    if (it.attachPath     != null) append(",\"attachPath\":${q(it.attachPath)}")
+                }
+                """{"id":${q(it.id)},"who":${q(it.who)},"text":${q(it.text)},"at":${it.at}$extra}"""
             }
             file.writeText("[$body]")
         } catch (e: Exception) {

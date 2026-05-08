@@ -1362,7 +1362,14 @@ function renderChatThread() {
     }
     msgsEl.innerHTML = msgs.map(m => {
         const time = m.at ? new Date(m.at).toLocaleString() : '';
-        return `<div class="ct-msg from-${m.who}">${esc(m.text)}<span class="ct-time">${esc(time)}</span></div>`;
+        let extra = '';
+        if (m.attachment?.kind === 'student-upload' && m.attachment.filename) {
+            const url = `/api/dashboard/files/${encodeURIComponent(chatActiveClient)}/${encodeURIComponent(m.attachment.filename)}`;
+            extra = `<br><a href="${url}" download="${esc(m.attachment.displayName || m.attachment.filename)}" style="color:inherit;text-decoration:underline">⬇ Descargar ${esc(m.attachment.displayName || m.attachment.filename)}</a>`;
+        } else if (m.attachment?.kind === 'teacher-send' && m.attachment.filename) {
+            extra = `<br><span style="opacity:.8;font-size:.78rem">↗ Entregado en proyecto del alumno: ${esc(m.attachment.path || m.attachment.filename)}</span>`;
+        }
+        return `<div class="ct-msg from-${m.who}">${esc(m.text)}${extra}<span class="ct-time">${esc(time)}</span></div>`;
     }).join('');
     // Scroll to the last message
     msgsEl.scrollTop = msgsEl.scrollHeight;
