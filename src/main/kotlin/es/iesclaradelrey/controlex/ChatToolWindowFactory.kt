@@ -41,9 +41,16 @@ class ChatToolWindowFactory : ToolWindowFactory {
             contentType = "text/html"
             editorKit = HTMLEditorKit()
             border = BorderFactory.createEmptyBorder(8, 8, 8, 8)
+            // Respeta el tema de IntelliJ — JBColor.background() devuelve
+            // claro/oscuro según el LAF activo.
+            background = JBColor.background()
             putClientProperty(JEditorPane.HONOR_DISPLAY_PROPERTIES, true)
         }
-        val scroll = JBScrollPane(pane).apply { verticalScrollBar.unitIncrement = 16 }
+        val scroll = JBScrollPane(pane).apply {
+            verticalScrollBar.unitIncrement = 16
+            viewport.background = JBColor.background()
+            background = JBColor.background()
+        }
 
         val input = JTextArea(2, 0).apply {
             lineWrap = true
@@ -72,7 +79,9 @@ class ChatToolWindowFactory : ToolWindowFactory {
             // en %, padding-left:30%) se ignoran y dejaban el render con
             // burbujas blancas o invisibles. Usamos <table> + bgcolor +
             // <font color> que sí se respetan en Swing.
-            val sb = StringBuilder("<html><body bgcolor=\"#FFFFFF\" style=\"font-family:sans-serif;font-size:11pt;margin:0\">")
+            // Sin bgcolor en el body para que se respete el background del
+            // JEditorPane (que viene de JBColor.background() — tema dinámico).
+            val sb = StringBuilder("<html><body style=\"font-family:sans-serif;font-size:11pt;margin:0\">")
             sb.append("<table width=\"100%\" cellspacing=\"0\" cellpadding=\"3\" border=\"0\">")
             if (msgs.isEmpty()) {
                 sb.append("""<tr><td align="center"><font color="#888888">Sin mensajes todavía. Aquí aparecerán los mensajes del profesor.</font></td></tr>""")
