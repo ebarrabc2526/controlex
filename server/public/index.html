@@ -931,6 +931,18 @@ body {
   </div>
 </div>
 
+<!-- ── Files received modal ────────────────────────────────────────────────── -->
+<div id="modal-chat-files" class="modal" style="display:none">
+  <div class="modal-box" style="width:560px;max-height:80vh;display:flex;flex-direction:column">
+    <h2>📂 Ficheros recibidos</h2>
+    <p class="sub" id="chat-files-sub"></p>
+    <div id="chat-files-list" style="flex:1;overflow-y:auto;border:1px solid #eee;border-radius:6px;margin-top:8px"></div>
+    <div class="modal-actions">
+      <button onclick="closeModal('modal-chat-files')">Cerrar</button>
+    </div>
+  </div>
+</div>
+
 <!-- ── Multichat modal ─────────────────────────────────────────────────────── -->
 <div id="modal-chat" class="modal" style="display:none">
   <div class="modal-box" style="width:860px;max-width:96vw;height:80vh;display:flex;flex-direction:column;padding:14px">
@@ -941,13 +953,16 @@ body {
       <div class="chat-thread">
         <div class="ct-header">
           <span id="chat-thread-title">Selecciona un alumno…</span>
-          <span>
+          <span style="display:flex;gap:6px">
+            <button id="chat-files-btn" onclick="chatOpenFilesModal()" style="font-size:.78rem;display:none">📂 Recibidos</button>
             <button id="chat-clear-thread" onclick="chatDeleteThread()" style="font-size:.78rem;color:#b71c1c;display:none">🗑 Borrar hilo</button>
           </span>
         </div>
         <div id="chat-thread-msgs" class="ct-msgs"><div class="ct-empty">Sin conversación seleccionada.</div></div>
         <div class="ct-input-row">
           <textarea id="chat-input" placeholder="Mensaje… (Enter envía, Ctrl+Enter salto de línea)"></textarea>
+          <input type="file" id="chat-file-input" style="display:none" onchange="chatSendFile(this.files[0])">
+          <button onclick="document.getElementById('chat-file-input').click()" title="Adjuntar fichero a los seleccionados / hilo activo" style="align-self:stretch;white-space:nowrap">📎</button>
           <button class="btn-primary" onclick="chatSend()" style="white-space:nowrap;align-self:stretch">📨 Enviar (<span id="chat-target-count">0</span>)</button>
         </div>
       </div>
@@ -1299,6 +1314,7 @@ async function selectChatThread(clientId) {
     const name = c ? `${c.seqNum != null ? '#' + c.seqNum + ' ' : ''}${esc(c.nickname || c.osUser || clientId.slice(0,8))}` : esc(clientId.slice(0,8));
     document.getElementById('chat-thread-title').innerHTML = name;
     document.getElementById('chat-clear-thread').style.display = '';
+    document.getElementById('chat-files-btn').style.display = '';
     // Fetch full thread (we don't trust the cache to be in sync after SSE)
     let msgs = [];
     try {
@@ -1353,6 +1369,77 @@ async function chatSend() {
     if (fail > 0) alert(`Mensaje enviado a ${ok}/${ok + fail} alumnos.`);
 }
 
+// Adjuntar fichero al chat: lo manda como send-file a los clientes seleccionados
+// (o solo al hilo activo si no hay selección bulk).
+async function chatSendFile(file) {
+    if (!file) return;
+    const targets = chatSelected.size > 0 ? [...chatSelected] :
+                    chatActiveClient ? [chatActiveClient] : [];
+    if (targets.length === 0) { alert('Selecciona alumno(s) primero.'); return; }
+    const MAX = 75 * 1024 * 1024;
+    if (file.size > MAX) {
+        alert(`Fichero demasiado grande (${(file.size/1024/1024).toFixed(1)} MB). Máximo: 75 MB.`);
+        document.getElementById('chat-file-input').value = '';
+        return;
+    }
+    // Leer como base64
+    const b64 = await new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => {
+            const s = String(r.result || '');
+            const i = s.indexOf(',');
+            resolve(i >= 0 ? s.slice(i + 1) : s);
+        };
+        r.onerror = () => reject(r.error);
+        r.readAsDataURL(file);
+    });
+    try {
+        const resp = await fetch('/api/dashboard/send-file', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ clientIds: targets, filename: file.name, contentB64: b64 })
+        });
+        const j = await resp.json();
+        if (!resp.ok) { alert(j.error || 'Error enviando fichero'); return; }
+        alert(`Fichero "${file.name}" enviado a ${j.sent}/${j.total} alumnos.`);
+        if (chatActiveClient) selectChatThread(chatActiveClient);
+        fetchChatSummaries();
+    } catch (e) { alert('Error: ' + e.message); }
+    document.getElementById('chat-file-input').value = '';
+}
+
+async function chatOpenFilesModal() {
+    if (!chatActiveClient) return;
+    const c = clients.find(x => x.clientId === chatActiveClient);
+    const label = c ? `${c.seqNum != null ? '#' + c.seqNum + ' ' : ''}${esc(c.nickname || c.osUser || chatActiveClient.slice(0,8))}` : esc(chatActiveClient.slice(0,8));
+    document.getElementById('chat-files-sub').innerHTML = `Subidos por <b>${label}</b>`;
+    const list = document.getElementById('chat-files-list');
+    list.innerHTML = '<p style="text-align:center;color:#888;padding:20px">Cargando…</p>';
+    document.getElementById('modal-chat-files').style.display = 'flex';
+    try {
+        const r = await fetch('/api/dashboard/files/' + encodeURIComponent(chatActiveClient));
+        const files = await r.json();
+        if (!Array.isArray(files) || files.length === 0) {
+            list.innerHTML = '<p style="text-align:center;color:#888;padding:20px">Sin ficheros recibidos.</p>';
+            return;
+        }
+        list.innerHTML = files.map(f => {
+            const time = f.mtime ? new Date(f.mtime).toLocaleString() : '';
+            const kb = (f.size / 1024).toFixed(1);
+            const url = `/api/dashboard/files/${encodeURIComponent(chatActiveClient)}/${encodeURIComponent(f.filename)}`;
+            return `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border-bottom:1px solid #f0f0f0">
+                <div style="flex:1;min-width:0">
+                  <div style="font-weight:600;font-size:.88rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(f.filename)}</div>
+                  <div style="font-size:.72rem;color:#888">${esc(time)} · ${kb} KB</div>
+                </div>
+                <a href="${url}" download="${esc(f.filename)}" style="color:#1565C0;text-decoration:none;font-size:.85rem">⬇ Descargar</a>
+            </div>`;
+        }).join('');
+    } catch (e) {
+        list.innerHTML = '<p style="text-align:center;color:#b71c1c;padding:20px">Error: ' + esc(e.message) + '</p>';
+    }
+}
+
 async function chatDeleteThread() {
     if (!chatActiveClient) return;
     if (!confirm('¿Borrar todo el historial de este chat?')) return;
@@ -1361,6 +1448,7 @@ async function chatDeleteThread() {
     chatActiveClient = null;
     document.getElementById('chat-thread-title').textContent = 'Selecciona un alumno…';
     document.getElementById('chat-clear-thread').style.display = 'none';
+    document.getElementById('chat-files-btn').style.display = 'none';
     renderChatThread();
     fetchChatSummaries();
 }

@@ -945,6 +945,84 @@ app.post('/api/dashboard/message', requireApiAuth, (req, res) => {
     res.json({ ok: true, count: targets.length });
 });
 
+// ── File transfer ────────────────────────────────────────────────────────────
+const UPLOADS_DIR = path.join(os.homedir(), '.controlex-server', 'uploads');
+
+function sanitizeFilename(name) {
+    return String(name || '').replace(/[\\/]/g, '_').replace(/[^\w.\-_ ]/g, '_').slice(0, 200);
+}
+
+// Teacher → students: enviar un fichero a uno o varios alumnos. El fichero
+// llega en base64 (límite efectivo ~75 MB con el cap de 100 MB de express.json).
+// Cada alumno recibe el comando send-file (que escribe el fichero en su
+// proyecto vía PluginCommandHandlers.writeFile) + un chat-message con la
+// notificación, y la entrada se añade también al chat persistente del servidor.
+app.post('/api/dashboard/send-file', requireApiAuth, (req, res) => {
+    const { clientIds, path: relPath, filename, contentB64 } = req.body || {};
+    if (!Array.isArray(clientIds) || clientIds.length === 0) {
+        return res.status(400).json({ error: 'clientIds (array) obligatorio' });
+    }
+    if (!filename || !contentB64) {
+        return res.status(400).json({ error: 'filename y contentB64 obligatorios' });
+    }
+    const safeName = sanitizeFilename(filename);
+    // Default path = filename plano (raíz del proyecto del alumno)
+    const finalPath = (relPath && String(relPath).trim()) ? String(relPath).slice(0, 500) : safeName;
+    let sent = 0;
+    for (const cid of clientIds) {
+        const ok1 = pushCommand(cid, { type: 'send-file', path: finalPath, content: String(contentB64) });
+        const ok2 = pushCommand(cid, { type: 'chat-message', who: 'teacher',
+                                        text: `📎 Fichero recibido: ${safeName}`, at: Date.now() });
+        if (ok1) sent++;
+        addChatEntry(cid, 'teacher', `📎 Fichero enviado: ${safeName} → ${finalPath}`);
+    }
+    res.json({ ok: true, sent, total: clientIds.length });
+});
+
+// Student → teacher: el alumno sube un fichero al servidor (queda en
+// ~/.controlex-server/uploads/<clientId>/<timestamp>_<filename>).
+app.post('/api/upload-file', requireClientAuth, (req, res) => {
+    const { clientId, filename, contentB64 } = req.body || {};
+    if (!clientId || !filename || !contentB64) {
+        return res.status(400).json({ error: 'clientId, filename y contentB64 obligatorios' });
+    }
+    const safeName = sanitizeFilename(filename);
+    const dir = path.join(UPLOADS_DIR, String(clientId));
+    try {
+        fs.mkdirSync(dir, { recursive: true });
+        const ts = new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, 19);
+        const fname = `${ts}_${safeName}`;
+        const data = Buffer.from(String(contentB64), 'base64');
+        fs.writeFileSync(path.join(dir, fname), data);
+        addChatEntry(String(clientId), 'student', `📎 Fichero enviado: ${safeName} (${(data.length / 1024).toFixed(1)} KB)`);
+        res.json({ ok: true, savedAs: fname });
+    } catch (e) {
+        console.warn('[controlex] upload-file error:', e.message);
+        res.status(500).json({ error: 'Error guardando el fichero' });
+    }
+});
+
+// Lista de ficheros subidos por un alumno
+app.get('/api/dashboard/files/:clientId', requireApiAuth, (req, res) => {
+    const dir = path.join(UPLOADS_DIR, req.params.clientId);
+    if (!fs.existsSync(dir)) return res.json([]);
+    try {
+        const entries = fs.readdirSync(dir).map(f => {
+            const st = fs.statSync(path.join(dir, f));
+            return { filename: f, size: st.size, mtime: st.mtime.toISOString() };
+        }).sort((a, b) => b.mtime.localeCompare(a.mtime));
+        res.json(entries);
+    } catch (e) { res.json([]); }
+});
+
+// Descargar un fichero subido por un alumno
+app.get('/api/dashboard/files/:clientId/:filename', requireApiAuth, (req, res) => {
+    const safe = String(req.params.filename).replace(/[\\\/]/g, '');
+    const fp = path.join(UPLOADS_DIR, req.params.clientId, safe);
+    if (!fs.existsSync(fp)) return res.status(404).send('No existe');
+    res.download(fp, safe);
+});
+
 // Student sends a chat message to the teacher.
 app.post('/api/chat', requireClientAuth, (req, res) => {
     const { clientId, text } = req.body || {};

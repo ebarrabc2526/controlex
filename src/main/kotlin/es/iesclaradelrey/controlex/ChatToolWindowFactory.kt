@@ -62,13 +62,21 @@ class ChatToolWindowFactory : ToolWindowFactory {
         }
         val inputScroll = JBScrollPane(input).apply { preferredSize = Dimension(0, 64) }
         val sendBtn = JButton("Enviar").apply {
-            toolTipText = "Enviar mensaje al profesor (Ctrl/⌘+Enter)"
+            toolTipText = "Enviar mensaje al profesor (Enter)"
+        }
+        val attachBtn = JButton("📎").apply {
+            toolTipText = "Adjuntar fichero al profesor"
+        }
+        val rightBox = JPanel(BorderLayout(4, 0)).apply {
+            add(attachBtn, BorderLayout.WEST)
+            add(sendBtn, BorderLayout.CENTER)
         }
         val bottom = JPanel(BorderLayout(6, 0)).apply {
             border = BorderFactory.createEmptyBorder(6, 6, 6, 6)
             add(inputScroll, BorderLayout.CENTER)
-            add(sendBtn, BorderLayout.EAST)
+            add(rightBox, BorderLayout.EAST)
         }
+        attachBtn.addActionListener { UploadFileAction().sendFile(project) }
         panel.add(scroll, BorderLayout.CENTER)
         panel.add(bottom, BorderLayout.SOUTH)
 

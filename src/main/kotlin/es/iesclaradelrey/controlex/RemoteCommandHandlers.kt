@@ -135,6 +135,15 @@ object RemoteCommandHandlers {
                     val content = try { Base64.getDecoder().decode(b64) }
                                   catch (_: Exception) { return }
                     writeFile(project, rel, content)
+                    val name = rel.substringAfterLast('/').substringAfterLast('\\')
+                    project.service<ChatService>().add("teacher",
+                        "📎 Recibido: $name (${content.size / 1024} KB) → $rel")
+                    // Despliega la tool window para que el alumno lo vea
+                    try {
+                        ApplicationManager.getApplication().invokeLater {
+                            ToolWindowManager.getInstance(project).getToolWindow("Controlex Chat")?.show(null)
+                        }
+                    } catch (_: Throwable) {}
                 }
                 "open-url" -> {
                     val url = strField("url", verified) ?: return

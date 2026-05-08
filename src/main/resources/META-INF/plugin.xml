@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>es.iesclaradelrey.controlex</id>
     <name>Controlex</name>
-    <version>3.0.5</version>
+    <version>3.0.6</version>
     <vendor email="ebarrabc2526@gmail.com" url="https://iesclaradelrey.es">IES Clara del Rey</vendor>
 
     <description><![CDATA[
@@ -71,6 +71,11 @@
                     icon="/icons/chat.svg">
                 <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt C"/>
             </action>
+            <action id="Controlex.UploadFile"
+                    class="es.iesclaradelrey.controlex.UploadFileAction"
+                    text="Enviar fichero al profesor"
+                    description="Sube un fichero local al profesor"
+                    icon="AllIcons.Actions.Upload"/>
             <action id="Controlex.ConfigureName"
                     class="es.iesclaradelrey.controlex.ConfigureNameAction"
                     text="Configurar nombre"
