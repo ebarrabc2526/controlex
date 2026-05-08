@@ -2573,13 +2573,26 @@ function toggleLaser() {
     _laserActive = !_laserActive;
     const btn = document.querySelector('.full-laser');
     const wrap = document.querySelector('.full-img-wrap');
+    const img = document.getElementById('full-img');
     btn.classList.toggle('active', _laserActive);
     wrap.classList.toggle('is-laser-on', _laserActive);
-    if (!_laserActive) {
-        // Notificar al plugin que oculte el puntero
+    if (_laserActive) {
+        // Solo enganchamos los listeners cuando el láser está activo —
+        // así nada interfiere con el flujo normal de openFull / live.
+        img.addEventListener('mousemove', laserMouseMove);
+        img.addEventListener('mouseleave', laserMouseLeave);
+        img.addEventListener('mousedown', laserMouseDown);
+        img.addEventListener('contextmenu', laserContextMenu);
+    } else {
+        img.removeEventListener('mousemove', laserMouseMove);
+        img.removeEventListener('mouseleave', laserMouseLeave);
+        img.removeEventListener('mousedown', laserMouseDown);
+        img.removeEventListener('contextmenu', laserContextMenu);
         sendLaserCommand({ visible: false });
     }
 }
+function laserMouseLeave() { if (_laserActive) sendLaserCommand({ visible: false }); }
+function laserContextMenu(e) { if (_laserActive) e.preventDefault(); }
 
 function laserMouseMove(e) {
     if (!_laserActive) return;
@@ -2622,20 +2635,9 @@ function postLaserFireAndForget(cid, payload) {
     }).catch(() => {});
 }
 
-// Hooks: imagen del fullscreen
-document.addEventListener('DOMContentLoaded', () => {
-    const img = document.getElementById('full-img');
-    if (!img) return;
-    img.addEventListener('mousemove', laserMouseMove);
-    img.addEventListener('mouseleave', () => {
-        if (_laserActive) sendLaserCommand({ visible: false });
-    });
-    // Click izquierdo / medio / derecho en modo láser → inject-click
-    img.addEventListener('mousedown', laserMouseDown);
-    img.addEventListener('contextmenu', e => {
-        if (_laserActive) e.preventDefault();
-    });
-});
+// Los listeners de láser/click se registran y se quitan dinámicamente en
+// toggleLaser() — así cuando el modo láser está apagado, el flujo normal
+// del fullscreen y del live no se ve afectado por nada que añadiéramos.
 
 function laserMouseDown(e) {
     if (!_laserActive) return;
