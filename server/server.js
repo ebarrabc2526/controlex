@@ -959,6 +959,35 @@ app.get('/api/dashboard/video-status', requireApiAuth, (req, res) => {
     res.json({ streaming: videoSenders.has(String(clientId || '')) });
 });
 
+// Pair: open a co-editing session against a client's file. Returns a token
+// that the dashboard then uses to open the WS at /api/dashboard/pair?token=X.
+app.post('/api/dashboard/pair-open', requireApiAuth, (req, res) => {
+    const { clientId, path: relPath } = req.body || {};
+    if (!clientId || !relPath) return res.status(400).json({ error: 'clientId y path obligatorios' });
+    if (!clients.has(clientId)) return res.status(404).json({ error: 'Cliente no conectado' });
+    const token = crypto.randomBytes(16).toString('hex');
+    pairSessions.set(token, {
+        clientId, path: String(relPath),
+        teacherWs: null,
+        expiresAt: Date.now() + 60_000   // 60s to redeem the token
+    });
+    pushCommand(clientId, { type: 'pair-open', path: String(relPath) });
+    res.json({ token });
+});
+
+app.post('/api/dashboard/pair-close', requireApiAuth, (req, res) => {
+    const { clientId, path: relPath } = req.body || {};
+    if (!clientId || !relPath) return res.status(400).json({ error: 'clientId y path obligatorios' });
+    pushCommand(clientId, { type: 'pair-close', path: String(relPath) });
+    for (const [tok, s] of pairSessions) {
+        if (s.clientId === clientId && s.path === relPath) {
+            if (s.teacherWs) try { s.teacherWs.close(); } catch (_) {}
+            pairSessions.delete(tok);
+        }
+    }
+    res.json({ ok: true });
+});
+
 // Wipe ALL clients (online and offline). Useful when the in-memory list
 // has stale entries after restarts or testing.
 app.post('/api/dashboard/wipe-all', requireApiAuth, (req, res) => {
@@ -1123,6 +1152,21 @@ httpServer.on('upgrade', (req, socket, head) => {
         wss.handleUpgrade(req, socket, head, ws => {
             handleDashboardVideoWs(ws, entry.clientId);
         });
+    } else if (pathname === '/api/client/pair') {
+        const auth = req.headers['authorization'];
+        if (!auth || auth !== `Bearer ${API_KEY}`) { socket.destroy(); return; }
+        wss.handleUpgrade(req, socket, head, ws => {
+            const clientId = String(url.searchParams.get('clientId') || '');
+            if (!clientId) { ws.close(1008, 'clientId required'); return; }
+            handlePluginPairWs(ws, clientId);
+        });
+    } else if (pathname === '/api/dashboard/pair') {
+        const token = String(url.searchParams.get('token') || '');
+        const session = pairSessions.get(token);
+        if (!session) { socket.destroy(); return; }
+        wss.handleUpgrade(req, socket, head, ws => {
+            handleDashboardPairWs(ws, token);
+        });
     } else {
         socket.destroy();
     }
@@ -1162,6 +1206,67 @@ function handleDashboardVideoWs(ws, clientId) {
     ws.on('close', onViewerGone);
     ws.on('error', onViewerGone);
 }
+
+// ── Pair coding (text relay between teacher and plugin) ──────────────────────
+// The plugin keeps a long-lived WS to /api/client/pair carrying doc-state /
+// edit / cursor messages for whichever sessions it has open. The dashboard
+// opens a session via POST /api/dashboard/pair-open (which generates a token
+// and tells the plugin to open the file) and then connects via WS to
+// /api/dashboard/pair?token=X. This server just relays JSON text between the
+// two sockets — no OT/CRDT, the plugin/CodeMirror sides handle convergence.
+
+const pluginPairSockets = new Map();   // clientId → WebSocket (plugin side)
+const pairSessions      = new Map();   // token    → { clientId, path, teacherWs, expiresAt }
+
+function handlePluginPairWs(ws, clientId) {
+    const old = pluginPairSockets.get(clientId);
+    if (old && old !== ws) { try { old.close(); } catch (_) {} }
+    pluginPairSockets.set(clientId, ws);
+    ws.on('message', (data, isBinary) => {
+        if (isBinary) return;
+        const text = data.toString();
+        // Forward to every active teacher WS for this clientId.
+        for (const s of pairSessions.values()) {
+            if (s.clientId === clientId && s.teacherWs && s.teacherWs.readyState === WebSocket.OPEN) {
+                try { s.teacherWs.send(text); } catch (_) {}
+            }
+        }
+    });
+    const onGone = () => {
+        if (pluginPairSockets.get(clientId) === ws) pluginPairSockets.delete(clientId);
+    };
+    ws.on('close', onGone);
+    ws.on('error', onGone);
+}
+
+function handleDashboardPairWs(ws, token) {
+    const session = pairSessions.get(token);
+    if (!session) { ws.close(1008, 'invalid token'); return; }
+    if (session.teacherWs) { try { session.teacherWs.close(); } catch (_) {} }
+    session.teacherWs = ws;
+    session.expiresAt = Number.MAX_SAFE_INTEGER;  // valid until WS closes
+    ws.on('message', (data, isBinary) => {
+        if (isBinary) return;
+        const pluginWs = pluginPairSockets.get(session.clientId);
+        if (pluginWs && pluginWs.readyState === WebSocket.OPEN) {
+            try { pluginWs.send(data.toString()); } catch (_) {}
+        }
+    });
+    const onGone = () => {
+        if (session.teacherWs === ws) session.teacherWs = null;
+    };
+    ws.on('close', onGone);
+    ws.on('error', onGone);
+}
+
+// Token cleanup: drop expired tokens that were never used. Sessions with an
+// active teacherWs have expiresAt = MAX_SAFE_INTEGER (cleaned on disconnect).
+setInterval(() => {
+    const now = Date.now();
+    for (const [tok, s] of pairSessions) {
+        if (!s.teacherWs && now > s.expiresAt) pairSessions.delete(tok);
+    }
+}, 30_000).unref();
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 
