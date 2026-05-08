@@ -2624,7 +2624,7 @@ function setCarouselSeconds(v) {
     if (currentView === 'carousel') {
         if (carouselTimer) clearInterval(carouselTimer);
         carouselTimer = setInterval(advanceCarousel, carouselSeconds * 1000);
-        renderCarousel();   // restart progress-bar animation at the new duration
+        restartCarouselProgress();   // resync progress bar to the new duration
     }
 }
 
@@ -2689,24 +2689,37 @@ function renderCarousel() {
     const start = carouselPageIdx * perPage;
     const pageItems = targets.slice(start, start + perPage);
 
-    // Rebuild DOM (page changes are infrequent, so a full rebuild is fine and
-    // ensures the live frames flow into the new cells via [data-id] selectors).
+    // Diff-based render: only rebuild DOM when the visible page actually
+    // changes (page rotation, perPage change, or selection change). On every
+    // screenshot SSE the framework calls render(), and rebuilding here would
+    // reset the progress bar and tear down live <img> elements unnecessarily —
+    // making the rotation feel inconsistent.
+    const newKey = pageItems.map(c => c.clientId).join('|');
+    const oldKey = [...cc.querySelectorAll('.carousel-cell')].map(el => el.dataset.id).join('|');
+    const sameLayout = newKey && newKey === oldKey;
+
+    if (sameLayout) {
+        // Refresh just the name overlay — keep <img> stable for live/refresh.
+        for (const c of pageItems) {
+            const cell = cc.querySelector(`.carousel-cell[data-id="${CSS.escape(c.clientId)}"]`);
+            if (!cell) continue;
+            const nameEl = cell.querySelector('.carousel-name');
+            if (nameEl) nameEl.innerHTML = carouselNameHTML(c);
+        }
+        return;
+    }
+
     cc.innerHTML = '';
     const frag = document.createDocumentFragment();
     for (const c of pageItems) frag.appendChild(buildCarouselCell(c));
     cc.appendChild(frag);
 
-    // Animate the bottom progress bar of the first cell to indicate elapsed time.
-    const first = cc.querySelector('.carousel-progress');
-    if (first && totalPages > 1) {
-        first.style.transition = 'none';
-        first.style.width = '0%';
-        // Force a reflow so the next transition takes effect
-        // eslint-disable-next-line no-unused-expressions
-        first.offsetHeight;
-        first.style.transition = `width ${Math.max(1, carouselSeconds)}s linear`;
-        first.style.width = '100%';
-    }
+    restartCarouselProgress();
+}
+
+function carouselNameHTML(c) {
+    const name = c.nickname || c.clientId.slice(0, 8);
+    return `<span class="carousel-seq">#${c.seqNum}</span>${esc(name)}`;
 }
 
 function buildCarouselCell(c) {
@@ -2716,9 +2729,24 @@ function buildCarouselCell(c) {
     const name = c.nickname || c.clientId.slice(0, 8);
     el.innerHTML = `
 <img src="${imgUrl(c.clientId)}" alt="Captura" onclick="openFull('${esc(c.clientId)}')">
-<div class="carousel-name" title="${esc(name)}"><span class="carousel-seq">#${c.seqNum}</span>${esc(name)}</div>
+<div class="carousel-name" title="${esc(name)}">${carouselNameHTML(c)}</div>
 <div class="carousel-progress"></div>`;
     return el;
+}
+
+function restartCarouselProgress() {
+    const cc = document.getElementById('carousel-container');
+    const targets = getCarouselTargets();
+    const totalPages = Math.max(1, Math.ceil(targets.length / Math.max(1, carouselPerPage)));
+    const bar = cc.querySelector('.carousel-progress');
+    if (!bar || totalPages <= 1) return;
+    bar.style.transition = 'none';
+    bar.style.width = '0%';
+    // Force reflow so the next transition takes effect.
+    // eslint-disable-next-line no-unused-expressions
+    bar.offsetHeight;
+    bar.style.transition = `width ${Math.max(1, carouselSeconds)}s linear`;
+    bar.style.width = '100%';
 }
 
 // ── Full-screen ───────────────────────────────────────────────────────────────
