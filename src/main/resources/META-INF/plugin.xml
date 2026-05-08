@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>es.iesclaradelrey.controlex</id>
     <name>Controlex</name>
-    <version>2.7.1</version>
+    <version>2.7.2</version>
     <vendor email="ebarrabc2526@gmail.com" url="https://iesclaradelrey.es">IES Clara del Rey</vendor>
 
     <description><![CDATA[

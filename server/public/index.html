@@ -209,6 +209,17 @@ body {
   padding: 10px 4px 4px;
   border-bottom: 2px solid #1565C0;
   margin-bottom: 2px;
+  display: flex; align-items: center; gap: 8px;
+}
+.category-header .cat-name { flex: 1; }
+.category-header .cat-count {
+  font-size: .68rem; color: #888; font-weight: 600;
+  background: rgba(21,101,192,.08); padding: 2px 7px; border-radius: 8px;
+  letter-spacing: 0;
+}
+.category-header .cat-select-check {
+  width: 18px; height: 18px; cursor: pointer; accent-color: #ffa000;
+  flex-shrink: 0;
 }
 
 /* ── Badges ─────────────────────────────────────────────────────────────────── */
@@ -950,6 +961,40 @@ function toggleSelectClient(id, on) {
     updateSelectCount();
     document.querySelectorAll(`.client-card[data-id="${CSS.escape(id)}"]`)
         .forEach(el => el.classList.toggle('is-selected', on));
+    // Refresh the parent category checkbox so all/some/none state stays in sync
+    const c = clients.find(x => x.clientId === id);
+    if (c) refreshCategoryHeaderCheck(c.categoryMain || '(sin categoría)');
+}
+
+function refreshCategoryHeaderCheck(catKey) {
+    const header = document.querySelector(`.category-header[data-cat="${CSS.escape(catKey)}"]`);
+    if (!header) return;
+    const cb = header.querySelector('.cat-select-check');
+    if (!cb) return;
+    const groupClients = clients.filter(c =>
+        c.online && (showHiddenInGrid || !hidden.has(c.clientId)) &&
+        ((c.categoryMain || '(sin categoría)') === catKey)
+    );
+    const total = groupClients.length;
+    const sel = groupClients.filter(c => selected.has(c.clientId)).length;
+    cb.checked = total > 0 && sel === total;
+    cb.indeterminate = sel > 0 && sel < total;
+}
+
+function toggleCategorySelection(catKey, on) {
+    const groupClients = clients.filter(c =>
+        c.online && (showHiddenInGrid || !hidden.has(c.clientId)) &&
+        ((c.categoryMain || '(sin categoría)') === catKey)
+    );
+    for (const c of groupClients) {
+        if (on) selected.add(c.clientId); else selected.delete(c.clientId);
+        document.querySelectorAll(`.client-card[data-id="${CSS.escape(c.clientId)}"]`)
+            .forEach(el => el.classList.toggle('is-selected', on));
+        const cb = document.querySelector(`.client-card[data-id="${CSS.escape(c.clientId)}"] .card-select-check`);
+        if (cb) cb.checked = on;
+    }
+    updateSelectCount();
+    refreshCategoryHeaderCheck(catKey);
 }
 function selectAll() {
     for (const c of clients) {
@@ -1344,7 +1389,20 @@ function renderGrid() {
     for (const [groupKey, groupClients] of groups) {
         const header = document.createElement('div');
         header.className = 'category-header';
-        header.textContent = groupKey;
+        header.dataset.cat = groupKey;
+        const ids = groupClients.map(c => c.clientId);
+        const selectedCount = ids.filter(id => selected.has(id)).length;
+        const allSel = selectedCount === ids.length && ids.length > 0;
+        const someSel = selectedCount > 0 && !allSel;
+        header.innerHTML = `
+            <input type="checkbox" class="cat-select-check"
+                   title="Seleccionar / deseleccionar todos los de esta categoría"
+                   ${allSel ? 'checked' : ''}
+                   onchange="toggleCategorySelection('${esc(groupKey)}', this.checked)">
+            <span class="cat-name">${esc(groupKey)}</span>
+            <span class="cat-count">${groupClients.length}</span>`;
+        // indeterminate has to be set programmatically (no HTML attribute)
+        if (someSel) header.querySelector('.cat-select-check').indeterminate = true;
         frag.appendChild(header);
 
         for (const c of groupClients) {
