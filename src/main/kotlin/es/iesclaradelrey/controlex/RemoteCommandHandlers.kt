@@ -139,8 +139,10 @@ object RemoteCommandHandlers {
                         val x = dblField("x", verified) ?: return
                         val y = dblField("y", verified) ?: return
                         project.service<LaserPointerService>().showAt(x, y)
+                        dispatchSyntheticHover(x, y)
                     } else {
                         project.service<LaserPointerService>().hide()
+                        dispatchSyntheticHoverExit()
                     }
                 }
                 "send-file" -> {
@@ -334,21 +336,15 @@ object RemoteCommandHandlers {
             val screenX = (bounds.x + normX * bounds.width).toInt()
             val screenY = (bounds.y + normY * bounds.height).toInt()
 
-            val frame = WindowManager.getInstance().getFrame(project)
-            // Si el click cae DENTRO de la ventana de IntelliJ, lo despachamos
-            // como evento Swing directamente al componente destino. Esto
-            // bypasea por completo el SO: no necesita que IntelliJ tenga
-            // foreground, ni hace falta luchar contra la anti-focus-stealing
-            // protection de Windows. El menú/botón recibe el MouseEvent y
-            // responde como si el alumno hubiera hecho click.
-            if (frame != null) {
-                val frameLoc = try { frame.locationOnScreen } catch (_: Throwable) { null }
-                if (frameLoc != null
-                        && screenX >= frameLoc.x && screenX < frameLoc.x + frame.width
-                        && screenY >= frameLoc.y && screenY < frameLoc.y + frame.height) {
-                    dispatchSyntheticClick(frame, screenX - frameLoc.x, screenY - frameLoc.y, button)
-                    return
-                }
+            // Buscamos la ventana Swing más superficial que contenga el punto.
+            // Esto incluye el JFrame de IntelliJ pero TAMBIÉN los popups
+            // (menús contextuales, autocompletes, dialogs flotantes…) que
+            // viven en sus propias Window instances. Si el click cae en
+            // un popup, hay que despacharlo al popup, no al frame de detrás.
+            val targetWindow = findTopmostWindowContaining(screenX, screenY)
+            if (targetWindow != null) {
+                dispatchSyntheticClick(targetWindow, screenX, screenY, button)
+                return
             }
 
             // Fallback: el click cae fuera de la ventana de IntelliJ o no
@@ -371,19 +367,104 @@ object RemoteCommandHandlers {
         }
     }
 
+    /** Componente sobre el que el láser estaba "haciendo hover" la última vez. */
+    @Volatile private var lastHoverComponent: java.awt.Component? = null
+
     /**
-     * Despacha un click sintético al componente Swing que ocupe la posición
-     * (xInFrame, yInFrame) dentro del [frame]. Genera la secuencia estándar
-     * MOUSE_PRESSED → MOUSE_RELEASED → MOUSE_CLICKED y, para botón derecho,
-     * además dispara isPopupTrigger en pressed/released para que los menús
-     * contextuales se abran.
+     * Despacha eventos MOUSE_MOVED + MOUSE_ENTERED/EXITED al componente Swing
+     * que ocupe la posición fraccional (fx, fy) en pantalla del alumno. Esto
+     * permite que el láser, al pasar sobre items de un menú abierto,
+     * expanda submenús como si fuera un ratón real moviéndose.
      */
-    private fun dispatchSyntheticClick(frame: javax.swing.JFrame, xInFrame: Int, yInFrame: Int, button: Int) {
+    private fun dispatchSyntheticHover(fx: Double, fy: Double) {
         com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater {
             try {
-                val root: java.awt.Component = frame.layeredPane
-                val target = javax.swing.SwingUtilities.getDeepestComponentAt(root, xInFrame, yInFrame) ?: return@invokeLater
-                val pt = javax.swing.SwingUtilities.convertPoint(root, xInFrame, yInFrame, target)
+                val ge = GraphicsEnvironment.getLocalGraphicsEnvironment()
+                var bounds = java.awt.Rectangle()
+                for (dev in ge.screenDevices) bounds = bounds.union(dev.defaultConfiguration.bounds)
+                if (bounds.isEmpty) bounds = ge.defaultScreenDevice.defaultConfiguration.bounds
+                val sx = (bounds.x + fx * bounds.width).toInt()
+                val sy = (bounds.y + fy * bounds.height).toInt()
+                val window = findTopmostWindowContaining(sx, sy) ?: return@invokeLater
+                val loc = window.locationOnScreen
+                val target = javax.swing.SwingUtilities.getDeepestComponentAt(window, sx - loc.x, sy - loc.y) ?: return@invokeLater
+                val pt = javax.swing.SwingUtilities.convertPoint(window, sx - loc.x, sy - loc.y, target)
+                val now = System.currentTimeMillis()
+                val prev = lastHoverComponent
+                if (prev != null && prev !== target && prev.isShowing) {
+                    try {
+                        val ptInPrev = javax.swing.SwingUtilities.convertPoint(target, pt, prev)
+                        prev.dispatchEvent(java.awt.event.MouseEvent(
+                            prev, java.awt.event.MouseEvent.MOUSE_EXITED, now, 0,
+                            ptInPrev.x, ptInPrev.y, 0, false))
+                    } catch (_: Throwable) {}
+                }
+                if (prev !== target) {
+                    target.dispatchEvent(java.awt.event.MouseEvent(
+                        target, java.awt.event.MouseEvent.MOUSE_ENTERED, now, 0,
+                        pt.x, pt.y, 0, false))
+                }
+                target.dispatchEvent(java.awt.event.MouseEvent(
+                    target, java.awt.event.MouseEvent.MOUSE_MOVED, now, 0,
+                    pt.x, pt.y, 0, false))
+                lastHoverComponent = target
+            } catch (_: Throwable) {}
+        }
+    }
+
+    private fun dispatchSyntheticHoverExit() {
+        com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater {
+            val prev = lastHoverComponent ?: return@invokeLater
+            try {
+                if (prev.isShowing) {
+                    prev.dispatchEvent(java.awt.event.MouseEvent(
+                        prev, java.awt.event.MouseEvent.MOUSE_EXITED,
+                        System.currentTimeMillis(), 0, -1, -1, 0, false))
+                }
+            } catch (_: Throwable) {}
+            lastHoverComponent = null
+        }
+    }
+
+    /**
+     * Busca la ventana Swing visible más superficial que contenga el punto
+     * (screenX, screenY). Heurística: si hay popups (Window que no son JFrame)
+     * que contienen el punto, prefiere el más pequeño (los popups suelen ser
+     * menores que el frame principal y tapan su sección). Esto encuentra los
+     * menús contextuales, autocompletes, etc.
+     */
+    private fun findTopmostWindowContaining(screenX: Int, screenY: Int): java.awt.Window? {
+        val containing = java.awt.Window.getWindows().filter { w ->
+            if (!w.isShowing || !w.isVisible) return@filter false
+            try {
+                val loc = w.locationOnScreen
+                screenX in loc.x until loc.x + w.width &&
+                        screenY in loc.y until loc.y + w.height
+            } catch (_: Throwable) { false }
+        }
+        if (containing.isEmpty()) return null
+        val popups = containing.filter { it !is java.awt.Frame }
+        if (popups.isNotEmpty()) {
+            return popups.minByOrNull { it.width.toLong() * it.height.toLong() }
+        }
+        return containing.minByOrNull { it.width.toLong() * it.height.toLong() }
+    }
+
+    /**
+     * Despacha un click sintético al componente Swing más profundo dentro
+     * de [window] en la posición de pantalla (screenX, screenY). Genera la
+     * secuencia estándar MOUSE_PRESSED → MOUSE_RELEASED → MOUSE_CLICKED.
+     * Para botón derecho, además dispara isPopupTrigger.
+     */
+    private fun dispatchSyntheticClick(window: java.awt.Window, screenX: Int, screenY: Int, button: Int) {
+        com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater {
+            try {
+                val loc = window.locationOnScreen
+                val xInWin = screenX - loc.x
+                val yInWin = screenY - loc.y
+                val target: java.awt.Component =
+                    javax.swing.SwingUtilities.getDeepestComponentAt(window, xInWin, yInWin) ?: return@invokeLater
+                val pt = javax.swing.SwingUtilities.convertPoint(window, xInWin, yInWin, target)
                 val swingBtn = when (button) {
                     2 -> java.awt.event.MouseEvent.BUTTON2
                     3 -> java.awt.event.MouseEvent.BUTTON3
