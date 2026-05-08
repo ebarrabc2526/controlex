@@ -65,6 +65,41 @@ body {
 .tb-help-inbox.has-pending { background: #d32f2f; border-color: #d32f2f; }
 .tb-help-inbox.has-pending { animation: helpInboxPulse 1.5s ease-in-out infinite; }
 @keyframes helpInboxPulse { 0%, 100% { opacity: 1 } 50% { opacity: .65 } }
+.tb-chat {
+  font-size: .78rem; font-weight: 700; white-space: nowrap;
+  background: rgba(255,255,255,.15); border: 1px solid rgba(255,255,255,.3);
+  color: #fff; padding: 4px 10px; border-radius: 14px; cursor: pointer;
+  transition: background .15s;
+}
+.tb-chat:hover { background: rgba(255,255,255,.28); }
+.tb-chat.has-unread { background: #43a047; border-color: #43a047; }
+
+/* Multichat modal */
+.chat-grid { display: grid; grid-template-columns: 240px 1fr; gap: 0; flex: 1; min-height: 0; border: 1px solid #eee; border-radius: 6px; overflow: hidden; }
+.chat-side { border-right: 1px solid #eee; overflow-y: auto; background: #fafbfd; }
+.chat-side .chat-side-row {
+  padding: 8px 10px; border-bottom: 1px solid #f0f0f0; cursor: pointer;
+  display: flex; gap: 6px; align-items: flex-start;
+}
+.chat-side .chat-side-row:hover { background: #eef4fb; }
+.chat-side .chat-side-row.is-active { background: #e3f2fd; }
+.chat-side input[type=checkbox] { margin-top: 3px; accent-color: #1565C0; }
+.chat-side .csr-body { flex: 1; min-width: 0; }
+.chat-side .csr-name { font-weight: 700; font-size: .85rem; color: #1565C0; display: flex; gap: 6px; align-items: center; }
+.chat-side .csr-unread { background: #43a047; color: #fff; font-size: .65rem; font-weight: 700; padding: 1px 6px; border-radius: 8px; }
+.chat-side .csr-snippet { font-size: .76rem; color: #666; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+.chat-side .csr-time { font-size: .68rem; color: #999; }
+
+.chat-thread { display: flex; flex-direction: column; overflow: hidden; }
+.chat-thread .ct-header { padding: 8px 12px; border-bottom: 1px solid #eee; background: #fff; font-weight: 700; color: #1565C0; display: flex; justify-content: space-between; align-items: center; }
+.chat-thread .ct-msgs { flex: 1; overflow-y: auto; padding: 10px; background: #f7f8fa; display: flex; flex-direction: column; gap: 6px; }
+.chat-thread .ct-msg { max-width: 78%; padding: 6px 10px; border-radius: 10px; font-size: .88rem; word-wrap: break-word; white-space: pre-wrap; }
+.chat-thread .ct-msg.from-teacher { align-self: flex-end; background: #1565C0; color: #fff; border-bottom-right-radius: 2px; }
+.chat-thread .ct-msg.from-student { align-self: flex-start; background: #fff; color: #213547; border: 1px solid #e0e0e0; border-bottom-left-radius: 2px; }
+.chat-thread .ct-msg .ct-time { display: block; font-size: .65rem; opacity: .65; margin-top: 2px; }
+.chat-thread .ct-input-row { display: flex; gap: 6px; padding: 8px; border-top: 1px solid #eee; background: #fff; }
+.chat-thread .ct-input-row textarea { flex: 1; padding: 6px 10px; border: 1px solid #ddd; border-radius: 6px; font-size: .9rem; resize: vertical; min-height: 38px; max-height: 120px; font-family: inherit; }
+.chat-thread .ct-empty { color: #888; text-align: center; padding: 30px 10px; font-size: .9rem; }
 
 /* Help-request toasts (student → teacher SOS) */
 #help-toast-stack {
@@ -763,6 +798,7 @@ body {
   <span class="tb-count" id="tb-count">—</span>
   <span class="tb-quality" id="tb-quality" onclick="openQuality()" title="Calidad global activa — pulsa para configurar">🎚 …</span>
   <span class="tb-help-inbox" id="tb-help-inbox" onclick="openHelpInbox()" title="Bandeja de peticiones de ayuda">🆘 <span id="help-pending-count">0</span></span>
+  <span class="tb-chat" id="tb-chat" onclick="openChat()" title="Chat con los alumnos">💬 <span id="chat-unread-count">0</span></span>
 
   <div class="tb-sep"></div>
 
@@ -878,6 +914,33 @@ body {
     <div class="modal-actions">
       <button onclick="closeModal('modal-msg')">Cancelar</button>
       <button class="btn-primary" onclick="sendMsg()">Enviar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Multichat modal ─────────────────────────────────────────────────────── -->
+<div id="modal-chat" class="modal" style="display:none">
+  <div class="modal-box" style="width:860px;max-width:96vw;height:80vh;display:flex;flex-direction:column;padding:14px">
+    <h2 style="margin-bottom:4px">💬 Chat con alumnos</h2>
+    <p class="sub" style="margin-bottom:8px">Hilo persistente por alumno. Marca varios en la izquierda para enviar el mismo mensaje a todos.</p>
+    <div class="chat-grid">
+      <div id="chat-side" class="chat-side"></div>
+      <div class="chat-thread">
+        <div class="ct-header">
+          <span id="chat-thread-title">Selecciona un alumno…</span>
+          <span>
+            <button id="chat-clear-thread" onclick="chatDeleteThread()" style="font-size:.78rem;color:#b71c1c;display:none">🗑 Borrar hilo</button>
+          </span>
+        </div>
+        <div id="chat-thread-msgs" class="ct-msgs"><div class="ct-empty">Sin conversación seleccionada.</div></div>
+        <div class="ct-input-row">
+          <textarea id="chat-input" placeholder="Mensaje… (Ctrl+Enter para enviar)"></textarea>
+          <button class="btn-primary" onclick="chatSend()" style="white-space:nowrap;align-self:stretch">📨 Enviar (<span id="chat-target-count">0</span>)</button>
+        </div>
+      </div>
+    </div>
+    <div class="modal-actions" style="margin-top:8px">
+      <button onclick="closeModal('modal-chat')">Cerrar</button>
     </div>
   </div>
 </div>
@@ -1079,6 +1142,157 @@ function toggleSelectClient(id, on) {
     // Refresh the parent category checkbox so all/some/none state stays in sync
     const c = clients.find(x => x.clientId === id);
     if (c) refreshCategoryHeaderCheck(c.categoryMain || '(sin categoría)');
+}
+
+// ── Multichat (teacher ↔ student) ────────────────────────────────────────────
+let chatSummaries = [];          // server-fed sidebar summary
+const chatThreadCache = new Map(); // clientId → array of messages
+const chatSelected = new Set();  // clientIds checked for bulk send
+let chatActiveClient = null;     // clientId currently shown in the right pane
+
+function updateChatBadge() {
+    const total = chatSummaries.reduce((sum, s) => sum + (s.unread || 0), 0);
+    const el = document.getElementById('chat-unread-count');
+    if (el) el.textContent = total;
+    document.getElementById('tb-chat')?.classList.toggle('has-unread', total > 0);
+}
+
+async function fetchChatSummaries() {
+    try {
+        const r = await fetch('/api/dashboard/chats');
+        if (!r.ok) return;
+        chatSummaries = await r.json();
+    } catch (_) { chatSummaries = []; }
+    updateChatBadge();
+    if (document.getElementById('modal-chat').style.display === 'flex') renderChatSidebar();
+}
+
+async function openChat(presetClientId) {
+    chatSelected.clear();
+    await fetchChatSummaries();
+    if (presetClientId) chatSelected.add(presetClientId);
+    renderChatSidebar();
+    if (presetClientId) selectChatThread(presetClientId);
+    else if (chatActiveClient) selectChatThread(chatActiveClient);
+    else if (chatSummaries[0]) selectChatThread(chatSummaries[0].clientId);
+    document.getElementById('modal-chat').style.display = 'flex';
+    setTimeout(() => document.getElementById('chat-input')?.focus(), 100);
+}
+
+function renderChatSidebar() {
+    const side = document.getElementById('chat-side');
+    // Build a unified list: existing summaries + any online client without thread,
+    // so the teacher can start a new conversation with anyone connected.
+    const known = new Set(chatSummaries.map(s => s.clientId));
+    const extras = clients.filter(c => c.online && !known.has(c.clientId)).map(c => ({
+        clientId: c.clientId, client: c, lastAt: '', lastText: '', lastWho: null, unread: 0, total: 0
+    }));
+    const all = [...chatSummaries, ...extras];
+    if (all.length === 0) {
+        side.innerHTML = '<div style="padding:14px;color:#888;font-size:.85rem">No hay alumnos conectados.</div>';
+        document.getElementById('chat-target-count').textContent = chatSelected.size;
+        return;
+    }
+    side.innerHTML = all.map(s => {
+        const c = s.client || {};
+        const seq = c.seqNum != null ? `#${c.seqNum}` : '';
+        const name = esc(c.nickname || c.osUser || (s.clientId || '').slice(0, 8));
+        const ip = esc(c.ip || '');
+        const snippet = s.lastText ? esc(s.lastText.slice(0, 60)) : '<em style="color:#aaa">(sin mensajes)</em>';
+        const time = s.lastAt ? new Date(s.lastAt).toLocaleTimeString().slice(0, 5) : '';
+        const unread = s.unread > 0 ? `<span class="csr-unread">${s.unread}</span>` : '';
+        const checked = chatSelected.has(s.clientId) ? 'checked' : '';
+        const active = chatActiveClient === s.clientId ? ' is-active' : '';
+        return `
+            <div class="chat-side-row${active}" data-id="${esc(s.clientId)}" onclick="selectChatThread('${esc(s.clientId)}')">
+              <input type="checkbox" ${checked} onclick="event.stopPropagation()" onchange="chatToggleSel('${esc(s.clientId)}',this.checked)">
+              <div class="csr-body">
+                <div class="csr-name">${seq} ${name} ${unread} <span style="flex:1"></span><span class="csr-time">${time}</span></div>
+                <div class="csr-snippet">${s.lastWho === 'teacher' ? '↳ ' : ''}${snippet}</div>
+                <div class="csr-time">${ip}</div>
+              </div>
+            </div>`;
+    }).join('');
+    document.getElementById('chat-target-count').textContent = chatSelected.size || (chatActiveClient ? 1 : 0);
+}
+
+function chatToggleSel(clientId, on) {
+    if (on) chatSelected.add(clientId); else chatSelected.delete(clientId);
+    document.getElementById('chat-target-count').textContent = chatSelected.size || (chatActiveClient ? 1 : 0);
+}
+
+async function selectChatThread(clientId) {
+    chatActiveClient = clientId;
+    document.querySelectorAll('.chat-side-row').forEach(el =>
+        el.classList.toggle('is-active', el.dataset.id === clientId));
+    const c = clients.find(x => x.clientId === clientId);
+    const name = c ? `${c.seqNum != null ? '#' + c.seqNum + ' ' : ''}${esc(c.nickname || c.osUser || clientId.slice(0,8))}` : esc(clientId.slice(0,8));
+    document.getElementById('chat-thread-title').innerHTML = name;
+    document.getElementById('chat-clear-thread').style.display = '';
+    // Fetch full thread (we don't trust the cache to be in sync after SSE)
+    let msgs = [];
+    try {
+        const r = await fetch('/api/dashboard/chats/' + encodeURIComponent(clientId));
+        if (r.ok) msgs = await r.json();
+    } catch (_) {}
+    chatThreadCache.set(clientId, msgs);
+    renderChatThread();
+    // Mark unread incoming as read on the server
+    try { await fetch('/api/dashboard/chats/' + encodeURIComponent(clientId) + '/read', { method: 'POST' }); } catch (_) {}
+    fetchChatSummaries();
+    document.getElementById('chat-target-count').textContent = chatSelected.size || 1;
+}
+
+function renderChatThread() {
+    const msgsEl = document.getElementById('chat-thread-msgs');
+    if (!chatActiveClient) { msgsEl.innerHTML = '<div class="ct-empty">Selecciona un alumno.</div>'; return; }
+    const msgs = chatThreadCache.get(chatActiveClient) || [];
+    if (msgs.length === 0) {
+        msgsEl.innerHTML = '<div class="ct-empty">Sin mensajes todavía. Escribe el primero abajo.</div>';
+        return;
+    }
+    msgsEl.innerHTML = msgs.map(m => {
+        const time = m.at ? new Date(m.at).toLocaleString() : '';
+        return `<div class="ct-msg from-${m.who}">${esc(m.text)}<span class="ct-time">${esc(time)}</span></div>`;
+    }).join('');
+    // Scroll to the last message
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+}
+
+async function chatSend() {
+    const ta = document.getElementById('chat-input');
+    const text = ta.value.trim();
+    if (!text) return;
+    let targets;
+    if (chatSelected.size > 0) targets = [...chatSelected];
+    else if (chatActiveClient) targets = [chatActiveClient];
+    else { alert('Selecciona alumno(s) primero.'); return; }
+    let ok = 0, fail = 0;
+    for (const cid of targets) {
+        try {
+            const r = await fetch('/api/dashboard/message', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ clientId: cid, text })
+            });
+            if (r.ok) ok++; else fail++;
+        } catch (_) { fail++; }
+    }
+    ta.value = '';
+    fetchChatSummaries();
+    if (chatActiveClient) selectChatThread(chatActiveClient);
+    if (fail > 0) alert(`Mensaje enviado a ${ok}/${ok + fail} alumnos.`);
+}
+
+async function chatDeleteThread() {
+    if (!chatActiveClient) return;
+    if (!confirm('¿Borrar todo el historial de este chat?')) return;
+    await fetch('/api/dashboard/chats/' + encodeURIComponent(chatActiveClient), { method: 'DELETE' });
+    chatThreadCache.delete(chatActiveClient);
+    chatActiveClient = null;
+    document.getElementById('chat-thread-title').textContent = 'Selecciona un alumno…';
+    document.getElementById('chat-clear-thread').style.display = 'none';
+    renderChatThread();
+    fetchChatSummaries();
 }
 
 // ── Remote actions (Run, Debug, Stop…) ───────────────────────────────────────
@@ -1552,6 +1766,12 @@ document.addEventListener('DOMContentLoaded', () => {
     updateSelectCount();
     refreshQualityBadge();
     fetchHelpHistory();
+    fetchChatSummaries();
+    // Ctrl+Enter (or Cmd+Enter) inside the chat input sends the message.
+    const ci = document.getElementById('chat-input');
+    if (ci) ci.addEventListener('keydown', e => {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); chatSend(); }
+    });
     // Version is injected server-side into #tb-ver, no fetch needed.
 });
 
@@ -1661,6 +1881,33 @@ function connectStream() {
         } catch (_) {}
     });
     eventSource.addEventListener('help-request-bulk', () => fetchHelpHistory());
+
+    eventSource.addEventListener('chat-message', e => {
+        try {
+            const { clientId, entry } = JSON.parse(e.data);
+            // Append to local cache if we have it
+            if (chatThreadCache.has(clientId)) chatThreadCache.get(clientId).push(entry);
+            // Update sidebar from the server (cheap, ensures unread counts match)
+            fetchChatSummaries();
+            if (chatActiveClient === clientId &&
+                document.getElementById('modal-chat').style.display === 'flex') {
+                renderChatThread();
+                // Mark as read because the user is looking at this thread
+                if (entry.who === 'student') {
+                    fetch('/api/dashboard/chats/' + encodeURIComponent(clientId) + '/read', { method: 'POST' });
+                }
+            }
+        } catch (_) {}
+    });
+    eventSource.addEventListener('chat-read', () => fetchChatSummaries());
+    eventSource.addEventListener('chat-thread-removed', e => {
+        try {
+            const { clientId } = JSON.parse(e.data);
+            chatThreadCache.delete(clientId);
+            if (chatActiveClient === clientId) chatActiveClient = null;
+            fetchChatSummaries();
+        } catch (_) {}
+    });
 
     eventSource.onerror = () => {
         // Auto-reconnect after 2s if stream drops
@@ -1928,7 +2175,7 @@ function cardInner(c) {
 <div class="card-info">${infoHTML(c)}${extraBadges ? `<div style="margin-top:4px">${extraBadges}<span class="badge" onclick="editCategories('${esc(c.clientId)}','${esc(c.osUser)}')" title="Añadir categorías extra">🏷</span></div>` : `<div style="margin-top:4px"><span class="badge" onclick="editCategories('${esc(c.clientId)}','${esc(c.osUser)}')" title="Añadir categorías extra">🏷 Categorías</span></div>`}</div>
 <div class="card-actions">
   <button class="card-btn"
-    onclick="openMsg('${esc(c.clientId)}','#${c.seqNum} ${displayName}')">💬 Mensaje</button>
+    onclick="openChat('${esc(c.clientId)}')" title="Abrir chat con este alumno">💬 Chat</button>
   <button class="card-btn"
     onclick="openCfg('${esc(c.clientId)}','#${c.seqNum} ${displayName}',${c.captureFreqMin},${c.captureFreqMax},${c.transmitFreqSeconds})">⚙ Config</button>
   <button class="card-btn"

@@ -17,6 +17,8 @@ const CATEGORIES_PATH = path.join(os.homedir(), '.controlex-server', 'categories
 const QUALITY_PATH    = path.join(os.homedir(), '.controlex-server', 'quality.json');
 const HELP_PATH       = path.join(os.homedir(), '.controlex-server', 'help-requests.json');
 const MAX_HELP_REQUESTS = 500;
+const CHAT_PATH       = path.join(os.homedir(), '.controlex-server', 'chat.json');
+const MAX_CHAT_ENTRIES_PER_CLIENT = 500;
 
 const app = express();
 const PORT          = process.env.PORT || 3000;
@@ -732,6 +734,45 @@ function pushCommand(clientId, cmd) {
     return delivered > 0;
 }
 
+// Multichat persistence (teacher ↔ student conversations).
+// Key=clientId → array of {id, who:'teacher'|'student', text, at, read}
+// Read flag is for incoming (student) messages so the panel can show an
+// unread counter; teacher messages are always read=true.
+let chatStore = (() => {
+    try {
+        fs.mkdirSync(path.dirname(CHAT_PATH), { recursive: true });
+        if (fs.existsSync(CHAT_PATH)) {
+            const raw = JSON.parse(fs.readFileSync(CHAT_PATH, 'utf8'));
+            return (raw && typeof raw === 'object') ? raw : {};
+        }
+    } catch (e) { console.warn('[controlex] chat load:', e.message); }
+    return {};
+})();
+function persistChat() {
+    try { fs.writeFileSync(CHAT_PATH, JSON.stringify(chatStore)); }
+    catch (e) { console.warn('[controlex] chat persist:', e.message); }
+}
+function addChatEntry(clientId, who, text) {
+    if (!chatStore[clientId]) chatStore[clientId] = [];
+    const entry = {
+        id:   crypto.randomBytes(6).toString('hex'),
+        who, text: String(text || '').slice(0, 4000),
+        at:   new Date().toISOString(),
+        read: who === 'teacher'   // teacher's own messages are auto-read
+    };
+    chatStore[clientId].push(entry);
+    if (chatStore[clientId].length > MAX_CHAT_ENTRIES_PER_CLIENT) {
+        chatStore[clientId].splice(0, chatStore[clientId].length - MAX_CHAT_ENTRIES_PER_CLIENT);
+    }
+    persistChat();
+    // Send a snapshot of the relevant client view so the panel can render the
+    // sidebar entry even before any /api/dashboard/clients call.
+    const c = clients.get(String(clientId));
+    const view = c ? clientView(c) : null;
+    broadcast('chat-message', { clientId, entry, client: view });
+    return entry;
+}
+
 // Help-request persistence (history that survives restarts).
 let helpRequests = (() => {
     try {
@@ -773,6 +814,8 @@ app.post('/api/help-request', requireClientAuth, (req, res) => {
     if (helpRequests.length > MAX_HELP_REQUESTS) helpRequests.length = MAX_HELP_REQUESTS;
     persistHelpRequests();
     broadcast('help-request', entry);
+    // También al chat para que aparezca como mensaje del alumno en el hilo.
+    if (entry.text) addChatEntry(entry.clientId, 'student', entry.text);
     res.json({ ok: true });
 });
 
@@ -890,10 +933,13 @@ app.get('/api/dashboard/screenshot/:clientId', requireApiAuth, (req, res) => {
 app.post('/api/dashboard/message', requireApiAuth, (req, res) => {
     const { clientId, text } = req.body;
     if (!text || !String(text).trim()) return res.status(400).json({ error: 'El campo text es obligatorio' });
+    const cleanText = String(text).trim().slice(0, 4000);
     const targets = clientId === '*' ? Array.from(clients.keys()) : [clientId].filter(id => clients.has(id));
     for (const id of targets) {
-        if (!pendingCommands.has(id)) pendingCommands.set(id, []);
-        pendingCommands.get(id).push({ type: 'message', text: String(text).trim() });
+        // pushCommand firma + envía vía SSE (con fallback a queue). Antes esto
+        // metía un {type:'message'} sin firmar que el plugin descartaba.
+        pushCommand(id, { type: 'show-dialog', title: 'Mensaje del profesor', text: cleanText });
+        addChatEntry(id, 'teacher', cleanText);
     }
     res.json({ ok: true, count: targets.length });
 });
@@ -1035,6 +1081,51 @@ app.get('/api/dashboard/video-token', requireApiAuth, (req, res) => {
 app.get('/api/dashboard/video-status', requireApiAuth, (req, res) => {
     const { clientId } = req.query;
     res.json({ streaming: videoSenders.has(String(clientId || '')) });
+});
+
+// ── Multichat endpoints ──────────────────────────────────────────────────────
+// Sidebar summary: which clients have conversations and how many unread.
+app.get('/api/dashboard/chats', requireApiAuth, (req, res) => {
+    const out = [];
+    for (const [clientId, msgs] of Object.entries(chatStore)) {
+        if (!msgs.length) continue;
+        const last = msgs[msgs.length - 1];
+        const unread = msgs.filter(m => m.who === 'student' && !m.read).length;
+        const c = clients.get(clientId);
+        const view = c ? clientView(c) : null;
+        out.push({
+            clientId,
+            client: view,
+            lastAt: last.at, lastText: last.text, lastWho: last.who,
+            unread, total: msgs.length
+        });
+    }
+    out.sort((a, b) => (a.lastAt < b.lastAt ? 1 : -1));
+    res.json(out);
+});
+
+// Full thread for a client.
+app.get('/api/dashboard/chats/:clientId', requireApiAuth, (req, res) => {
+    res.json(chatStore[req.params.clientId] || []);
+});
+
+// Mark all student-side entries of a client as read.
+app.post('/api/dashboard/chats/:clientId/read', requireApiAuth, (req, res) => {
+    const msgs = chatStore[req.params.clientId];
+    if (msgs) {
+        let changed = false;
+        for (const m of msgs) if (m.who === 'student' && !m.read) { m.read = true; changed = true; }
+        if (changed) { persistChat(); broadcast('chat-read', { clientId: req.params.clientId }); }
+    }
+    res.json({ ok: true });
+});
+
+// Delete the whole thread of a client.
+app.delete('/api/dashboard/chats/:clientId', requireApiAuth, (req, res) => {
+    delete chatStore[req.params.clientId];
+    persistChat();
+    broadcast('chat-thread-removed', { clientId: req.params.clientId });
+    res.json({ ok: true });
 });
 
 // Pair: open a co-editing session against a client's file. Returns a token
