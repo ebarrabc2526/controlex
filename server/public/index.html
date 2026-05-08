@@ -963,12 +963,14 @@ function clearSelection() { selected.clear(); updateSelectCount(); render(); }
 function selectionShow() {
     if (selected.size === 0) { alert('No hay clientes seleccionados.'); return; }
     for (const id of selected) hidden.delete(id);
-    persistHidden(); updateHiddenCount(); render();
+    selected.clear();
+    persistHidden(); updateHiddenCount(); updateSelectCount(); render();
 }
 function selectionHide() {
     if (selected.size === 0) { alert('No hay clientes seleccionados.'); return; }
     for (const id of selected) hidden.add(id);
-    persistHidden(); updateHiddenCount(); render();
+    selected.clear();
+    persistHidden(); updateHiddenCount(); updateSelectCount(); render();
 }
 function showHiddenInGridOn()  { showHiddenInGrid = true;  render(); }
 function hideHiddenFromGrid()  { showHiddenInGrid = false; render(); }
