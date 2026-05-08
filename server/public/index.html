@@ -55,6 +55,31 @@ body {
 }
 .tb-quality:hover { background: rgba(255,255,255,.28); }
 .tb-quality.is-max { background: #ffd54f; color: #1565C0; border-color: #ffd54f; }
+
+/* Help-request toasts (student → teacher SOS) */
+#help-toast-stack {
+  position: fixed; top: 70px; right: 16px;
+  display: flex; flex-direction: column; gap: 10px;
+  z-index: 1100; max-width: 360px;
+}
+.help-toast {
+  background: #fff; color: #b71c1c;
+  border-left: 5px solid #d32f2f;
+  padding: 10px 14px; border-radius: 6px;
+  box-shadow: 0 6px 24px rgba(0,0,0,.25);
+  cursor: pointer; user-select: none;
+  animation: helpSlideIn .3s ease-out;
+}
+.help-toast .help-head { font-weight: 700; font-size: .92rem; display: flex; gap: 6px; align-items: center; }
+.help-toast .help-text { font-size: .85rem; margin-top: 4px; color: #333; white-space: pre-wrap; }
+.help-toast .help-time { font-size: .7rem; color: #888; margin-top: 4px; }
+.help-toast .help-close { float: right; cursor: pointer; color: #888; font-size: 1.1rem; line-height: 1; }
+@keyframes helpSlideIn { from { transform: translateX(120%); opacity: 0 } to { transform: none; opacity: 1 } }
+.client-card.help-flash { animation: helpFlash 1s ease-in-out 4; }
+@keyframes helpFlash {
+  0%, 100% { box-shadow: 0 2px 12px rgba(0,0,0,.08); outline: 0 }
+  50%      { box-shadow: 0 0 0 4px #d32f2f; outline: 4px solid #ff5252 }
+}
 .tb-sep { width: 1px; height: 28px; background: rgba(255,255,255,.25); flex-shrink: 0; }
 .spacer { flex: 1; }
 
@@ -689,6 +714,8 @@ body {
 <body>
 
 <!-- ── Toolbar ─────────────────────────────────────────────────────────────── -->
+<div id="help-toast-stack"></div>
+
 <header class="toolbar">
   <h1>CONTROLEX<span class="tb-ver" id="tb-ver"></span></h1>
   <span class="tb-count" id="tb-count">—</span>
@@ -966,6 +993,75 @@ function toggleSelectClient(id, on) {
     if (c) refreshCategoryHeaderCheck(c.categoryMain || '(sin categoría)');
 }
 
+// ── Help-request handling (alumno → profesor SOS) ───────────────────────────
+function showHelpRequest(data) {
+    const stack = document.getElementById('help-toast-stack');
+    if (!stack) return;
+    const seq = data.seqNum != null ? `#${data.seqNum}` : '';
+    const name = esc(data.nickname || data.osUser || (data.clientId || '').slice(0, 8));
+    const ip = esc(data.ip || '');
+    const text = esc(data.text || '(sin mensaje)');
+    const tHHMM = data.at ? new Date(data.at).toLocaleTimeString() : new Date().toLocaleTimeString();
+    const toast = document.createElement('div');
+    toast.className = 'help-toast';
+    toast.innerHTML = `
+        <span class="help-close" onclick="event.stopPropagation();this.parentElement.remove()">×</span>
+        <div class="help-head">🆘 ${seq} ${name} <span style="color:#777;font-weight:400;font-size:.78rem">${ip}</span></div>
+        <div class="help-text">${text}</div>
+        <div class="help-time">${tHHMM} — pulsa para ir al cliente</div>`;
+    toast.onclick = () => {
+        focusClient(data.clientId);
+        toast.remove();
+    };
+    stack.prepend(toast);
+    while (stack.children.length > 6) stack.lastChild.remove();
+    setTimeout(() => { try { toast.remove(); } catch (_) {} }, 30_000);
+    flashCardHelp(data.clientId);
+    playHelpBeep();
+}
+
+function focusClient(clientId) {
+    if (!clientId) return;
+    // Make sure the client is visible: un-hide if needed.
+    if (hidden.has(clientId)) {
+        hidden.delete(clientId); persistHidden(); updateHiddenCount(); render();
+    }
+    const sel = CSS.escape(clientId);
+    const card = document.querySelector(`.client-card[data-id="${sel}"]`);
+    if (card) {
+        card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        flashCardHelp(clientId);
+    }
+}
+
+function flashCardHelp(clientId) {
+    if (!clientId) return;
+    const sel = CSS.escape(clientId);
+    document.querySelectorAll(`.client-card[data-id="${sel}"]`).forEach(el => {
+        el.classList.remove('help-flash');
+        // restart the CSS animation
+        void el.offsetWidth;
+        el.classList.add('help-flash');
+        setTimeout(() => el.classList.remove('help-flash'), 4500);
+    });
+}
+
+let _helpAudioCtx = null;
+function playHelpBeep() {
+    try {
+        _helpAudioCtx = _helpAudioCtx || new (window.AudioContext || window.webkitAudioContext)();
+        const ctx = _helpAudioCtx;
+        if (ctx.state === 'suspended') ctx.resume();
+        const o = ctx.createOscillator(), g = ctx.createGain();
+        o.type = 'sine'; o.frequency.setValueAtTime(880, ctx.currentTime);
+        g.gain.setValueAtTime(0.0001, ctx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.18, ctx.currentTime + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.35);
+        o.connect(g).connect(ctx.destination);
+        o.start(); o.stop(ctx.currentTime + 0.4);
+    } catch (_) { /* audio bloqueado en algunos navegadores hasta interacción */ }
+}
+
 function refreshCategoryHeaderCheck(catKey) {
     const header = document.querySelector(`.category-header[data-cat="${CSS.escape(catKey)}"]`);
     if (!header) return;
@@ -1224,6 +1320,10 @@ function connectStream() {
         closeLive(clientId);
         updateCount();
         render();
+    });
+
+    eventSource.addEventListener('help-request', e => {
+        try { showHelpRequest(JSON.parse(e.data)); } catch (err) { console.error(err); }
     });
 
     eventSource.onerror = () => {

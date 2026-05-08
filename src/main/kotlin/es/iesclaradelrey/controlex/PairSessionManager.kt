@@ -203,6 +203,19 @@ class PairSessionManager(private val project: Project) : Disposable {
         override fun onOpen(webSocket: WebSocket) {
             ws = webSocket
             webSocket.request(Long.MAX_VALUE)
+            // (Re)send doc-state for every active session. If openSession was
+            // called while the WS was still down, the initial doc-state was
+            // silently dropped (sendJson short-circuits when ws is null).
+            // Re-sending here also lets the teacher's panel resync after a
+            // network blip on the alumno's side.
+            ApplicationManager.getApplication().invokeLater {
+                for (s in sessions.values) {
+                    val content = s.editor.document.text
+                    sendJson(
+                        """{"type":"doc-state","path":${q(s.path)},"version":${s.version},"content":${q(content)}}"""
+                    )
+                }
+            }
         }
         override fun onText(webSocket: WebSocket, data: CharSequence, last: Boolean): CompletableFuture<*>? {
             buf.append(data)
