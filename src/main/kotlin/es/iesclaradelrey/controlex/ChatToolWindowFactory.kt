@@ -116,15 +116,28 @@ class ChatToolWindowFactory : ToolWindowFactory {
             val text = input.text.trim()
             if (text.isEmpty()) return
             input.text = ""
+            // Añadir local sincrónicamente en EDT — así la burbuja del alumno
+            // aparece YA en su tool window. El POST HTTP va en pool detrás.
+            chat.add("student", text)
             ApplicationManager.getApplication().executeOnPooledThread {
-                chat.send(text)
+                chat.sendNetworkOnly(text)
             }
         }
         sendBtn.addActionListener { doSend() }
         input.addKeyListener(object : KeyAdapter() {
             override fun keyPressed(e: KeyEvent) {
-                if ((e.isControlDown || e.isMetaDown) && e.keyCode == KeyEvent.VK_ENTER) {
-                    e.consume(); doSend()
+                if (e.keyCode == KeyEvent.VK_ENTER) {
+                    if (e.isControlDown || e.isMetaDown) {
+                        // Ctrl/⌘+Enter → salto de línea (insertarlo manualmente
+                        // porque vamos a consumir el evento para no enviar).
+                        val pos = input.caretPosition
+                        input.document.insertString(pos, "\n", null)
+                        e.consume()
+                    } else if (!e.isShiftDown) {
+                        // Enter solo → enviar.
+                        e.consume(); doSend()
+                    }
+                    // Shift+Enter cae a default de JTextArea → newline. OK.
                 }
             }
         })

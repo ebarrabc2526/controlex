@@ -13,10 +13,7 @@ import com.intellij.openapi.editor.ScrollType
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.vfs.LocalFileSystem
-import com.intellij.notification.NotificationGroupManager
-import com.intellij.notification.NotificationType
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.wm.ToolWindowManager
 import com.intellij.openapi.wm.WindowManager
@@ -56,14 +53,13 @@ object RemoteCommandHandlers {
 
             when (type) {
                 "show-dialog" -> {
+                    // Compatibilidad: cualquier mensaje del profesor (incluso
+                    // si el servidor emite show-dialog en lugar de chat-message)
+                    // se enruta a la tool window de chat. NO mostramos popup
+                    // modal — al usuario le molesta más que ayuda.
                     val text  = strField("text",  verified) ?: return
-                    val title = strField("title", verified) ?: "Mensaje del profesor"
-                    // Compatibilidad: además del popup, deja constancia en el
-                    // chat para que el alumno pueda releer (sobre todo si el
-                    // origen real era un mensaje del profesor enviado desde
-                    // un servidor previo a v3.0.0 que aún emitía show-dialog).
                     project.service<ChatService>().add("teacher", text)
-                    Messages.showInfoMessage(project, text, title)
+                    notifyTeacherChat(project, text)
                 }
                 "chat-message" -> {
                     val text = strField("text", verified) ?: return
@@ -168,20 +164,11 @@ object RemoteCommandHandlers {
         }
     }
 
-    private fun notifyTeacherChat(project: Project, text: String) {
+    private fun notifyTeacherChat(project: Project, @Suppress("UNUSED_PARAMETER") text: String) {
+        // Solo abrir la tool window — el balloon era percibido como "ventana
+        // flotante" molesta. La burbuja del mensaje aparece en el hilo en
+        // cuanto la tool window se renderiza.
         ApplicationManager.getApplication().invokeLater {
-            try {
-                NotificationGroupManager.getInstance()
-                    .getNotificationGroup("Controlex Chat")
-                    .createNotification(
-                        "Mensaje del profesor",
-                        text.take(200) + if (text.length > 200) "…" else "",
-                        NotificationType.INFORMATION
-                    )
-                    .notify(project)
-            } catch (_: Throwable) { /* el notificationGroup puede no estar registrado en algunos IDE viejos */ }
-            // Hacer pop a la tool window para que el alumno la vea sin tener
-            // que buscarla manualmente.
             try {
                 ToolWindowManager.getInstance(project).getToolWindow("Controlex Chat")?.show(null)
             } catch (_: Throwable) {}

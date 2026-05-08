@@ -50,14 +50,10 @@ class ChatService(private val project: Project) : Disposable {
     fun addListener(l: (Message) -> Unit) { listeners.add(l) }
     fun removeListener(l: (Message) -> Unit) { listeners.remove(l) }
 
-    /** Enviar un mensaje del alumno al servidor. Devuelve true si el HTTP POST fue 2xx. */
-    fun send(text: String): Boolean {
+    /** Solo envía por HTTP — el caller ya hizo el [add] local en EDT. */
+    fun sendNetworkOnly(text: String): Boolean {
         val cleaned = text.trim()
         if (cleaned.isEmpty()) return false
-        // Optimistic local add — si el POST falla, el mensaje queda igualmente
-        // en el log local del alumno (no perdemos su intento) pero el profesor
-        // no lo verá. Aceptable: el alumno reintenta.
-        add("student", cleaned)
         return try {
             val clientId = project.service<ServerTransmitter>().clientId
             val body = """{"clientId":${q(clientId)},"text":${q(cleaned)}}"""
