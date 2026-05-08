@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>es.iesclaradelrey.controlex</id>
     <name>Controlex</name>
-    <version>3.0.9</version>
+    <version>3.1.0</version>
     <vendor email="ebarrabc2526@gmail.com" url="https://iesclaradelrey.es">IES Clara del Rey</vendor>
 
     <description><![CDATA[
@@ -46,7 +46,7 @@
         <toolWindow id="Controlex Chat"
                     anchor="right"
                     factoryClass="es.iesclaradelrey.controlex.ChatToolWindowFactory"
-                    icon="/icons/chat.svg"/>
+                    icon="AllIcons.Toolwindows.ToolWindowMessages"/>
 
         <notificationGroup id="Controlex Chat" displayType="BALLOON"/>
     </extensions>
