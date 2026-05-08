@@ -67,30 +67,38 @@ class ChatToolWindowFactory : ToolWindowFactory {
 
         fun render() {
             val msgs = chat.all()
-            val sb = StringBuilder("<html><body style='font-family:sans-serif;font-size:11pt;margin:0;padding:0'>")
+            // HTMLEditorKit de Swing soporta sólo HTML 3.2 / 4.0 simple.
+            // Las propiedades CSS modernas (display:inline-block, max-width
+            // en %, padding-left:30%) se ignoran y dejaban el render con
+            // burbujas blancas o invisibles. Usamos <table> + bgcolor +
+            // <font color> que sí se respetan en Swing.
+            val sb = StringBuilder("<html><body bgcolor=\"#FFFFFF\" style=\"font-family:sans-serif;font-size:11pt;margin:0\">")
+            sb.append("<table width=\"100%\" cellspacing=\"0\" cellpadding=\"3\" border=\"0\">")
             if (msgs.isEmpty()) {
-                sb.append("<div style='color:#888;text-align:center;padding:20px'>Sin mensajes todavía. Aquí aparecerán los mensajes del profesor.</div>")
+                sb.append("""<tr><td align="center"><font color="#888888">Sin mensajes todavía. Aquí aparecerán los mensajes del profesor.</font></td></tr>""")
             } else {
                 val tf = SimpleDateFormat("HH:mm:ss")
                 for (m in msgs) {
                     val time = tf.format(Date(m.at))
                     val text = htmlEscape(m.text).replace("\n", "<br>")
                     if (m.who == "teacher") {
-                        sb.append("""<div style='margin:4px 0;padding-right:30%;'>
-                            |<div style='background:#eef4fb;border:1px solid #bbdefb;color:#0d47a1;padding:6px 10px;border-radius:8px;display:inline-block;max-width:100%;'>
-                            |<b>Profesor</b><br>$text
-                            |<div style='color:#888;font-size:8pt;margin-top:2px'>$time</div>
-                            |</div></div>""".trimMargin())
+                        sb.append("""<tr><td align="left">
+                            |<table cellspacing="0" cellpadding="6" border="0" bgcolor="#E3F2FD"><tr><td>
+                            |<font color="#0D47A1"><b>Profesor</b></font><br>
+                            |<font color="#0D47A1">$text</font>
+                            |<br><font color="#888888" size="2">$time</font>
+                            |</td></tr></table></td><td width="20%">&nbsp;</td></tr>""".trimMargin())
                     } else {
-                        sb.append("""<div style='margin:4px 0;padding-left:30%;text-align:right;'>
-                            |<div style='background:#1565C0;color:#fff;padding:6px 10px;border-radius:8px;display:inline-block;max-width:100%;text-align:left;'>
-                            |<b>Yo</b><br>$text
-                            |<div style='color:#cfd8dc;font-size:8pt;margin-top:2px'>$time</div>
-                            |</div></div>""".trimMargin())
+                        sb.append("""<tr><td width="20%">&nbsp;</td><td align="right">
+                            |<table cellspacing="0" cellpadding="6" border="0" bgcolor="#1565C0"><tr><td>
+                            |<font color="#FFFFFF"><b>Yo</b></font><br>
+                            |<font color="#FFFFFF">$text</font>
+                            |<br><font color="#CFD8DC" size="2">$time</font>
+                            |</td></tr></table></td></tr>""".trimMargin())
                     }
                 }
             }
-            sb.append("</body></html>")
+            sb.append("</table></body></html>")
             pane.text = sb.toString()
             // Auto-scroll abajo después de que Swing pinte el HTML.
             SwingUtilities.invokeLater {

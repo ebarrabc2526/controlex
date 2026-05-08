@@ -947,7 +947,7 @@ body {
         </div>
         <div id="chat-thread-msgs" class="ct-msgs"><div class="ct-empty">Sin conversación seleccionada.</div></div>
         <div class="ct-input-row">
-          <textarea id="chat-input" placeholder="Mensaje… (Ctrl+Enter para enviar)"></textarea>
+          <textarea id="chat-input" placeholder="Mensaje… (Enter envía, Ctrl+Enter salto de línea)"></textarea>
           <button class="btn-primary" onclick="chatSend()" style="white-space:nowrap;align-self:stretch">📨 Enviar (<span id="chat-target-count">0</span>)</button>
         </div>
       </div>
@@ -1837,10 +1837,22 @@ document.addEventListener('DOMContentLoaded', () => {
     refreshQualityBadge();
     fetchHelpHistory();
     fetchChatSummaries();
-    // Ctrl+Enter (or Cmd+Enter) inside the chat input sends the message.
+    // Enter envía; Ctrl/⌘+Enter (y Shift+Enter) inserta salto de línea.
     const ci = document.getElementById('chat-input');
     if (ci) ci.addEventListener('keydown', e => {
-        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); chatSend(); }
+        if (e.key !== 'Enter') return;
+        if (e.ctrlKey || e.metaKey) {
+            // Insertar newline manual (default de Ctrl+Enter en textarea no
+            // es siempre newline en todos los navegadores; lo forzamos).
+            e.preventDefault();
+            const start = ci.selectionStart, end = ci.selectionEnd;
+            ci.value = ci.value.substring(0, start) + '\n' + ci.value.substring(end);
+            ci.selectionStart = ci.selectionEnd = start + 1;
+            return;
+        }
+        if (e.shiftKey) return;   // Shift+Enter → newline (default del textarea)
+        e.preventDefault();
+        chatSend();
     });
     // Version is injected server-side into #tb-ver, no fetch needed.
 });
