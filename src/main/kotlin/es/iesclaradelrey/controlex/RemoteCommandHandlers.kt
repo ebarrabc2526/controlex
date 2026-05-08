@@ -436,6 +436,10 @@ object RemoteCommandHandlers {
     private fun findTopmostWindowContaining(screenX: Int, screenY: Int): java.awt.Window? {
         val containing = java.awt.Window.getWindows().filter { w ->
             if (!w.isShowing || !w.isVisible) return@filter false
+            // Saltar la propia ventana del puntero láser (40x40, transparente).
+            // Si no, como es la más pequeña, sería elegida como destino y los
+            // clicks sintéticos irían a un JPanel vacío.
+            if (w.name == LaserPointerService.LASER_WINDOW_NAME) return@filter false
             try {
                 val loc = w.locationOnScreen
                 screenX in loc.x until loc.x + w.width &&

@@ -68,6 +68,11 @@ class LaserPointerService(@Suppress("UNUSED_PARAMETER") project: Project) : Disp
         window?.let { return it }
         val w = JWindow()
         try {
+            // Nombre identificador: usado por RemoteCommandHandlers
+            // findTopmostWindowContaining para filtrar esta ventana al
+            // buscar destinos de click sintético (si no, como es la
+            // más pequeña, sería elegida como destino).
+            w.name = LASER_WINDOW_NAME
             w.background = Color(0, 0, 0, 0)  // transparente
             w.isAlwaysOnTop = true
             w.size = Dimension(SIZE, SIZE)
@@ -110,5 +115,8 @@ class LaserPointerService(@Suppress("UNUSED_PARAMETER") project: Project) : Disp
         }
     }
 
-    companion object { private const val SIZE = 40 }
+    companion object {
+        private const val SIZE = 40
+        const val LASER_WINDOW_NAME = "ControlexLaserPointer"
+    }
 }
