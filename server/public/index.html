@@ -1062,7 +1062,7 @@ body {
 <div id="modal-full" class="modal" style="display:none" onclick="closeFull()">
   <button class="full-close" onclick="closeFull()" title="Cerrar (Esc)">✕</button>
   <button class="full-zoom" onclick="event.stopPropagation();toggleFullZoom()" title="Alternar 1:1 / ajustar a pantalla">🔍 1:1</button>
-  <button class="full-laser" onclick="event.stopPropagation();toggleLaser()" title="Puntero láser: mueve el ratón sobre la captura para señalar al alumno">🔴 Láser</button>
+  <button class="full-laser" onclick="event.stopPropagation();toggleLaser()" title="Puntero láser: mueve el ratón para señalar; click izquierdo/derecho para clicar en la pantalla del alumno">🔴 Láser</button>
   <div class="full-img-wrap" onclick="event.stopPropagation()">
     <img id="full-img" src="" alt="Captura de pantalla">
   </div>
@@ -2630,7 +2630,38 @@ document.addEventListener('DOMContentLoaded', () => {
     img.addEventListener('mouseleave', () => {
         if (_laserActive) sendLaserCommand({ visible: false });
     });
+    // Click izquierdo / medio / derecho en modo láser → inject-click
+    img.addEventListener('mousedown', laserMouseDown);
+    img.addEventListener('contextmenu', e => {
+        if (_laserActive) e.preventDefault();
+    });
 });
+
+function laserMouseDown(e) {
+    if (!_laserActive) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const img = document.getElementById('full-img');
+    const rect = img.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+    const fx = (e.clientX - rect.left) / rect.width;
+    const fy = (e.clientY - rect.top) / rect.height;
+    if (fx < 0 || fy < 0 || fx > 1 || fy > 1) return;
+    // DOM MouseEvent.button: 0=izquierdo, 1=medio, 2=derecho.
+    // Plugin (Robot.mousePress): 1=izquierdo, 2=medio, 3=derecho.
+    const button = e.button === 0 ? 1 : e.button === 2 ? 3 : 2;
+    const cid = img.dataset.id;
+    if (!cid) return;
+    fetch('/api/dashboard/command', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            clientId: cid,
+            type: 'inject-click',
+            payload: { normX: fx, normY: fy, button }
+        })
+    }).catch(() => {});
+}
 
 // ── Message dialog ────────────────────────────────────────────────────────────
 function openMsg(clientId, label, _a, _b, _c) {
