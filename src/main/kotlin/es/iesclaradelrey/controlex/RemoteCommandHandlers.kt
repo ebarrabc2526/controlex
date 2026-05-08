@@ -119,7 +119,7 @@ object RemoteCommandHandlers {
                     val normX  = dblField("normX",  verified) ?: return
                     val normY  = dblField("normY",  verified) ?: return
                     val button = numField("button", verified)?.toInt() ?: 1
-                    injectClick(normX, normY, button)
+                    injectClick(project, normX, normY, button)
                 }
                 "lock-session" -> {
                     val msg = strField("message", verified)
@@ -325,7 +325,7 @@ object RemoteCommandHandlers {
         }
     }
 
-    private fun injectClick(normX: Double, normY: Double, button: Int) {
+    private fun injectClick(project: Project, normX: Double, normY: Double, button: Int) {
         try {
             val ge = GraphicsEnvironment.getLocalGraphicsEnvironment()
             var bounds = java.awt.Rectangle()
@@ -338,11 +338,25 @@ object RemoteCommandHandlers {
                 3 -> InputEvent.BUTTON3_DOWN_MASK
                 else -> InputEvent.BUTTON1_DOWN_MASK
             }
+            // Enfocar la ventana de IntelliJ antes del click. Sin esto, en
+            // configuraciones donde otra app tenga el foco (caso típico:
+            // pruebas en el mismo equipo con el panel en Chrome), el primer
+            // click iría sólo a activar la ventana sin abrir menús, etc.
+            val frame = WindowManager.getInstance().getFrame(project)
+            if (frame != null) {
+                javax.swing.SwingUtilities.invokeLater {
+                    try {
+                        frame.toFront()
+                        frame.requestFocus()
+                    } catch (_: Throwable) {}
+                }
+                Thread.sleep(80)
+            }
             val robot = Robot()
             robot.mouseMove(screenX, screenY)
-            robot.delay(50)
+            robot.delay(60)
             robot.mousePress(mask)
-            robot.delay(50)
+            robot.delay(60)
             robot.mouseRelease(mask)
         } catch (e: Exception) {
             log.warn("Controlex: error en inject-click", e)
