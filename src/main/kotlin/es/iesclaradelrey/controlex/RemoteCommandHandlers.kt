@@ -133,6 +133,12 @@ object RemoteCommandHandlers {
                     val rel = strField("path", verified) ?: return
                     createDir(project, rel)
                 }
+                "inject-keystroke" -> {
+                    val ch  = strField("char", verified)
+                    val key = strField("key",  verified)
+                    val mods = arrField("modifiers", verified)
+                    dispatchSyntheticKey(ch, key, mods)
+                }
                 "laser-pointer" -> {
                     val visible = strField("visible", verified) == "true"
                     if (visible) {
@@ -369,6 +375,87 @@ object RemoteCommandHandlers {
 
     /** Componente sobre el que el láser estaba "haciendo hover" la última vez. */
     @Volatile private var lastHoverComponent: java.awt.Component? = null
+
+    /**
+     * Despacha una pulsación de tecla como KeyEvent sintético al focusOwner
+     * actual de la ventana Swing más superficial. Soporta:
+     *  - char: un único carácter imprimible (e.g. "a", "5", " ").
+     *  - key: nombre de tecla especial (Backspace, Enter, Tab, Escape,
+     *         ArrowLeft, ArrowRight, ArrowUp, ArrowDown, Delete, Home, End,
+     *         PageUp, PageDown, F1..F12, Space).
+     *  - modifiers: lista con cualquiera de "Ctrl", "Alt", "Shift", "Meta".
+     */
+    private fun dispatchSyntheticKey(ch: String?, key: String?, modifiers: List<String>) {
+        com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater {
+            try {
+                val target: java.awt.Component =
+                    java.awt.KeyboardFocusManager.getCurrentKeyboardFocusManager().focusOwner
+                        ?: java.awt.KeyboardFocusManager.getCurrentKeyboardFocusManager().activeWindow
+                        ?: return@invokeLater
+                var mods = 0
+                for (m in modifiers) when (m.lowercase()) {
+                    "ctrl", "control" -> mods = mods or InputEvent.CTRL_DOWN_MASK
+                    "alt"             -> mods = mods or InputEvent.ALT_DOWN_MASK
+                    "shift"           -> mods = mods or InputEvent.SHIFT_DOWN_MASK
+                    "meta", "cmd"     -> mods = mods or InputEvent.META_DOWN_MASK
+                }
+                val now = System.currentTimeMillis()
+                if (key != null) {
+                    val (vk, kch) = specialKey(key) ?: return@invokeLater
+                    target.dispatchEvent(java.awt.event.KeyEvent(target, java.awt.event.KeyEvent.KEY_PRESSED,  now,     mods, vk, kch))
+                    if (kch != java.awt.event.KeyEvent.CHAR_UNDEFINED) {
+                        target.dispatchEvent(java.awt.event.KeyEvent(target, java.awt.event.KeyEvent.KEY_TYPED, now + 1, mods, java.awt.event.KeyEvent.VK_UNDEFINED, kch))
+                    }
+                    target.dispatchEvent(java.awt.event.KeyEvent(target, java.awt.event.KeyEvent.KEY_RELEASED, now + 5, mods, vk, kch))
+                    return@invokeLater
+                }
+                if (ch != null && ch.isNotEmpty()) {
+                    val c = ch[0]
+                    val vk = when {
+                        c.isLetter() -> java.awt.event.KeyEvent.getExtendedKeyCodeForChar(c.code) // VK_A..Z
+                        c.isDigit()  -> java.awt.event.KeyEvent.VK_0 + (c - '0')
+                        c == ' '     -> java.awt.event.KeyEvent.VK_SPACE
+                        else         -> java.awt.event.KeyEvent.VK_UNDEFINED
+                    }
+                    target.dispatchEvent(java.awt.event.KeyEvent(target, java.awt.event.KeyEvent.KEY_PRESSED, now,     mods, vk, c))
+                    target.dispatchEvent(java.awt.event.KeyEvent(target, java.awt.event.KeyEvent.KEY_TYPED,   now + 1, mods, java.awt.event.KeyEvent.VK_UNDEFINED, c))
+                    target.dispatchEvent(java.awt.event.KeyEvent(target, java.awt.event.KeyEvent.KEY_RELEASED, now + 5, mods, vk, c))
+                }
+            } catch (e: Exception) {
+                log.warn("Controlex: error en synthetic key dispatch", e)
+            }
+        }
+    }
+
+    private fun specialKey(name: String): Pair<Int, Char>? = when (name) {
+        "Backspace" -> java.awt.event.KeyEvent.VK_BACK_SPACE to '\b'
+        "Enter"     -> java.awt.event.KeyEvent.VK_ENTER to '\n'
+        "Tab"       -> java.awt.event.KeyEvent.VK_TAB to '\t'
+        "Escape"    -> java.awt.event.KeyEvent.VK_ESCAPE to java.awt.event.KeyEvent.CHAR_UNDEFINED
+        "ArrowLeft"  -> java.awt.event.KeyEvent.VK_LEFT  to java.awt.event.KeyEvent.CHAR_UNDEFINED
+        "ArrowRight" -> java.awt.event.KeyEvent.VK_RIGHT to java.awt.event.KeyEvent.CHAR_UNDEFINED
+        "ArrowUp"    -> java.awt.event.KeyEvent.VK_UP    to java.awt.event.KeyEvent.CHAR_UNDEFINED
+        "ArrowDown"  -> java.awt.event.KeyEvent.VK_DOWN  to java.awt.event.KeyEvent.CHAR_UNDEFINED
+        "Delete"     -> java.awt.event.KeyEvent.VK_DELETE to ''
+        "Home"       -> java.awt.event.KeyEvent.VK_HOME  to java.awt.event.KeyEvent.CHAR_UNDEFINED
+        "End"        -> java.awt.event.KeyEvent.VK_END   to java.awt.event.KeyEvent.CHAR_UNDEFINED
+        "PageUp"     -> java.awt.event.KeyEvent.VK_PAGE_UP   to java.awt.event.KeyEvent.CHAR_UNDEFINED
+        "PageDown"   -> java.awt.event.KeyEvent.VK_PAGE_DOWN to java.awt.event.KeyEvent.CHAR_UNDEFINED
+        "Space"      -> java.awt.event.KeyEvent.VK_SPACE to ' '
+        "F1"  -> java.awt.event.KeyEvent.VK_F1  to java.awt.event.KeyEvent.CHAR_UNDEFINED
+        "F2"  -> java.awt.event.KeyEvent.VK_F2  to java.awt.event.KeyEvent.CHAR_UNDEFINED
+        "F3"  -> java.awt.event.KeyEvent.VK_F3  to java.awt.event.KeyEvent.CHAR_UNDEFINED
+        "F4"  -> java.awt.event.KeyEvent.VK_F4  to java.awt.event.KeyEvent.CHAR_UNDEFINED
+        "F5"  -> java.awt.event.KeyEvent.VK_F5  to java.awt.event.KeyEvent.CHAR_UNDEFINED
+        "F6"  -> java.awt.event.KeyEvent.VK_F6  to java.awt.event.KeyEvent.CHAR_UNDEFINED
+        "F7"  -> java.awt.event.KeyEvent.VK_F7  to java.awt.event.KeyEvent.CHAR_UNDEFINED
+        "F8"  -> java.awt.event.KeyEvent.VK_F8  to java.awt.event.KeyEvent.CHAR_UNDEFINED
+        "F9"  -> java.awt.event.KeyEvent.VK_F9  to java.awt.event.KeyEvent.CHAR_UNDEFINED
+        "F10" -> java.awt.event.KeyEvent.VK_F10 to java.awt.event.KeyEvent.CHAR_UNDEFINED
+        "F11" -> java.awt.event.KeyEvent.VK_F11 to java.awt.event.KeyEvent.CHAR_UNDEFINED
+        "F12" -> java.awt.event.KeyEvent.VK_F12 to java.awt.event.KeyEvent.CHAR_UNDEFINED
+        else -> null
+    }
 
     /**
      * Despacha eventos MOUSE_MOVED + MOUSE_ENTERED/EXITED al componente Swing

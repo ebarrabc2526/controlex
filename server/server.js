@@ -1136,6 +1136,19 @@ app.post('/api/dashboard/command', requireApiAuth, (req, res) => {
             if (!payload?.path) return res.status(400).json({ error: 'payload.path obligatorio' });
             cmd.path = String(payload.path).slice(0, 500);
             break;
+        case 'inject-keystroke': {
+            const ch = payload?.char;
+            const key = payload?.key;
+            if ((typeof ch !== 'string' || ch.length !== 1) && (typeof key !== 'string' || !key)) {
+                return res.status(400).json({ error: 'payload.char (1 char) o payload.key obligatorio' });
+            }
+            if (typeof ch === 'string' && ch.length === 1) cmd.char = ch;
+            if (typeof key === 'string' && key) cmd.key = String(key).slice(0, 30);
+            cmd.modifiers = Array.isArray(payload?.modifiers)
+                ? payload.modifiers.filter(m => ['Ctrl','Alt','Shift','Meta'].includes(m))
+                : [];
+            break;
+        }
         case 'laser-pointer': {
             const visible = !!payload?.visible;
             cmd.visible = visible ? 'true' : 'false';   // strField extrae strings

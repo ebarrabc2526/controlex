@@ -1070,7 +1070,7 @@ body {
 <div id="modal-full" class="modal" style="display:none" onclick="closeFull()">
   <button class="full-close" onclick="closeFull()" title="Cerrar (Esc)">✕</button>
   <button class="full-zoom" onclick="event.stopPropagation();toggleFullZoom()" title="Alternar 1:1 / ajustar a pantalla">🔍 1:1</button>
-  <button class="full-laser" onclick="event.stopPropagation();toggleLaser()" title="Puntero láser: mueve el ratón para señalar; click izquierdo/derecho para clicar en la pantalla del alumno">🔴 Láser</button>
+  <button class="full-laser" onclick="event.stopPropagation();toggleLaser()" title="Puntero láser: mueve el ratón para señalar, click izq/der para clicar y teclea para enviar pulsaciones al alumno">🔴 Láser</button>
   <div class="full-img-wrap" onclick="event.stopPropagation()">
     <img id="full-img" src="" alt="Captura de pantalla" draggable="false" ondragstart="return false">
   </div>
@@ -2587,21 +2587,59 @@ function toggleLaser() {
     if (_laserActive) {
         img.addEventListener('mousemove', laserMouseMove);
         img.addEventListener('mouseleave', laserMouseLeave);
-        // Click izquierdo → click event (universal, no le afecta el image-drag).
         img.addEventListener('click', laserClick);
-        // Click derecho → contextmenu event (preventDefault para no abrir
-        // el menú nativo del navegador).
         img.addEventListener('contextmenu', laserContextMenu);
-        // Click medio → auxclick (button=1 en DOM).
         img.addEventListener('auxclick', laserAuxClick);
+        // Captura de teclado: lo escuchamos en document para coger todo
+        // (incluso cuando el foco no está en la imagen). preventDefault
+        // evita que Chrome procese la tecla.
+        document.addEventListener('keydown', laserKeyDown, true);
     } else {
         img.removeEventListener('mousemove', laserMouseMove);
         img.removeEventListener('mouseleave', laserMouseLeave);
         img.removeEventListener('click', laserClick);
         img.removeEventListener('contextmenu', laserContextMenu);
         img.removeEventListener('auxclick', laserAuxClick);
+        document.removeEventListener('keydown', laserKeyDown, true);
         sendLaserCommand({ visible: false });
     }
+}
+
+const _LASER_SPECIAL_KEYS = new Set([
+    'Backspace','Enter','Tab','Escape','Delete',
+    'ArrowLeft','ArrowRight','ArrowUp','ArrowDown',
+    'Home','End','PageUp','PageDown','Space',
+    'F1','F2','F3','F4','F5','F6','F7','F8','F9','F10','F11','F12'
+]);
+
+function laserKeyDown(e) {
+    if (!_laserActive) return;
+    if (document.getElementById('modal-full').style.display !== 'flex') return;
+    // Modificadores solos no se mandan (lo que llega es la combinación con
+    // la siguiente tecla "real").
+    if (e.key === 'Control' || e.key === 'Alt' || e.key === 'Shift' || e.key === 'Meta') return;
+    const fullImg = document.getElementById('full-img');
+    const cid = fullImg?.dataset.id;
+    if (!cid) return;
+    const modifiers = [];
+    if (e.ctrlKey)  modifiers.push('Ctrl');
+    if (e.altKey)   modifiers.push('Alt');
+    if (e.shiftKey) modifiers.push('Shift');
+    if (e.metaKey)  modifiers.push('Meta');
+    let payload = null;
+    if (e.key.length === 1) {
+        payload = { char: e.key, modifiers };
+    } else if (_LASER_SPECIAL_KEYS.has(e.key)) {
+        payload = { key: e.key, modifiers };
+    }
+    if (!payload) return;   // tecla no soportada (Lock, Insert, etc)
+    e.preventDefault();
+    e.stopPropagation();
+    fetch('/api/dashboard/command', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientId: cid, type: 'inject-keystroke', payload })
+    }).catch(() => {});
 }
 function laserMouseLeave() { if (_laserActive) sendLaserCommand({ visible: false }); }
 function laserClick(e) {
