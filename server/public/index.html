@@ -686,17 +686,108 @@ body {
 .q-slider.is-disabled { opacity: .35; pointer-events: none; }
 .q-row.is-disabled { opacity: .35; }
 
-/* ── Toolbar inline action group (desktop default) ─────────────────────────── */
-.tb-actions { display: flex; align-items: center; gap: 6px; }
-.tb-actions .drawer-header,
-.tb-actions .drawer-group[data-label]::before { display: none; }
-.tb-actions .drawer-group { display: flex; align-items: center; gap: 6px; }
-.tb-actions .drawer-group + .drawer-group { padding-left: 6px; border-left: 1px solid rgba(255,255,255,.25); margin-left: 0; }
-.drawer-backdrop { display: none; }
+/* ── Toolbar action group — drawer + hamburguesa en TODAS las resoluciones ──── */
+/* En modo drawer el toolbar no debe formar stacking context propio (z-index:100),
+   porque atraparía al drawer y el backdrop quedaría por encima → drawer en gris,
+   clicks bloqueados. */
+.toolbar { z-index: auto; }
+.tb-sep-actions { display: none; }
+
+/* El grupo de acciones es siempre un drawer lateral */
+.tb-actions {
+  position: fixed;
+  top: 0; right: 0;
+  width: 300px; max-width: 86vw;
+  height: 100vh;
+  height: 100dvh;
+  background: #fff;
+  color: #212121;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  padding: 14px 14px 22px;
+  overflow-y: auto;
+  transform: translateX(100%);
+  transition: transform .25s ease;
+  box-shadow: -6px 0 20px rgba(0,0,0,.28);
+  z-index: 200;
+}
+.tb-actions[data-drawer-open="true"] { transform: translateX(0); }
+
+.tb-actions .drawer-header {
+  display: flex; align-items: center; justify-content: space-between;
+  border-bottom: 1px solid #eee; padding-bottom: 10px; margin-bottom: 4px;
+}
+.drawer-title { font-size: .85rem; font-weight: 700; letter-spacing: 1.5px; color: #1565C0; text-transform: uppercase; }
+.drawer-close {
+  background: transparent; border: 0; font-size: 1.1rem; color: #666;
+  width: 32px; height: 32px; border-radius: 6px; cursor: pointer;
+}
+.drawer-close:hover { background: #f0f0f0; }
+
+.tb-actions .drawer-group,
+.tb-actions .drawer-group + .drawer-group {
+  display: flex; flex-direction: column; align-items: stretch;
+  gap: 6px; border: 0; padding: 6px 0 8px; margin: 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+.tb-actions .drawer-group:last-child { border-bottom: 0; }
+.tb-actions .drawer-group[data-label]::before {
+  content: attr(data-label);
+  display: block;
+  font-size: .7rem; color: #888; text-transform: uppercase; letter-spacing: 1.2px;
+  margin: 6px 0 4px;
+}
+.tb-actions .tb-btn {
+  background: #fff;
+  border: 1px solid #1565C0;
+  color: #1565C0;
+  padding: 11px 12px;
+  font-size: .9rem;
+  font-weight: 600;
+  text-align: left;
+  border-radius: 7px;
+  min-height: 42px;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: rgba(21,101,192,.25);
+  transition: background .15s, color .15s, transform .05s;
+}
+/* Skip :hover on touch devices — iOS turns first tap into a hover
+   instead of a click, which made the buttons feel "disabled". */
+@media (hover: hover) {
+  .tb-actions .tb-btn:hover { background: #E3F2FD; }
+}
+.tb-actions .tb-btn:active { background: #1565C0; color: #fff; transform: scale(.98); }
+
+.tb-actions .ctrl {
+  flex-direction: row; gap: 8px; flex-wrap: wrap;
+  color: #213547; font-size: .82rem;
+}
+.tb-actions .ctrl select {
+  background: #f6f8fb;
+  border: 1px solid #d6dde6;
+  color: #213547;
+  padding: 8px 10px;
+  border-radius: 6px;
+  flex: 1; min-width: 100px;
+}
+.tb-actions .ctrl select option { background: #fff; color: #213547; }
+
+.drawer-backdrop {
+  display: block;
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.45);
+  opacity: 0; pointer-events: none;
+  transition: opacity .25s;
+  z-index: 199;
+}
+.drawer-backdrop.open { opacity: 1; pointer-events: auto; }
 
 /* ── Hamburger ─────────────────────────────────────────────────────────────── */
 .hamburger {
-  display: none;
+  display: flex;
   background: rgba(255,255,255,.12);
   border: 1px solid rgba(255,255,255,.35);
   border-radius: 6px;
@@ -716,7 +807,7 @@ body {
 .hamburger.open span:nth-child(2) { opacity: 0; }
 .hamburger.open span:nth-child(3) { transform: translateY(-6px) rotate(-45deg); }
 
-/* ── Responsive: tablet (≤ 1180 px, cubre todos los iPads en landscape) → drawer ─── */
+/* ── Responsive: tablet (≤ 1180 px, cubre todos los iPads en landscape) ─────── */
 @media (max-width: 1180px) {
   .toolbar {
     flex-wrap: nowrap;
@@ -725,105 +816,6 @@ body {
     gap: 6px;
   }
   .toolbar h1 { font-size: .95rem; letter-spacing: 1.5px; }
-  .tb-sep-actions { display: none; }
-
-  .hamburger { display: flex; }
-
-  /* Convert the action group into a side drawer */
-  .tb-actions {
-    position: fixed;
-    top: 0; right: 0;
-    width: 300px; max-width: 86vw;
-    height: 100vh;
-    height: 100dvh;
-    background: #fff;
-    color: #212121;
-    flex-direction: column;
-    align-items: stretch;
-    gap: 6px;
-    padding: 14px 14px 22px;
-    overflow-y: auto;
-    transform: translateX(100%);
-    transition: transform .25s ease;
-    box-shadow: -6px 0 20px rgba(0,0,0,.28);
-    z-index: 200;
-  }
-  .tb-actions[data-drawer-open="true"] { transform: translateX(0); }
-
-  /* En modo drawer, el toolbar no debe formar stacking context propio
-     (z-index:100), porque atraparía al drawer y el backdrop quedaría
-     por encima → drawer en gris, clicks bloqueados. */
-  .toolbar { z-index: auto; }
-
-  .tb-actions .drawer-header {
-    display: flex; align-items: center; justify-content: space-between;
-    border-bottom: 1px solid #eee; padding-bottom: 10px; margin-bottom: 4px;
-  }
-  .drawer-title { font-size: .85rem; font-weight: 700; letter-spacing: 1.5px; color: #1565C0; text-transform: uppercase; }
-  .drawer-close {
-    background: transparent; border: 0; font-size: 1.1rem; color: #666;
-    width: 32px; height: 32px; border-radius: 6px; cursor: pointer;
-  }
-  .drawer-close:hover { background: #f0f0f0; }
-
-  .tb-actions .drawer-group,
-  .tb-actions .drawer-group + .drawer-group {
-    display: flex; flex-direction: column; align-items: stretch;
-    gap: 6px; border: 0; padding: 6px 0 8px; margin: 0;
-    border-bottom: 1px solid #f0f0f0;
-  }
-  .tb-actions .drawer-group:last-child { border-bottom: 0; }
-  .tb-actions .drawer-group[data-label]::before {
-    content: attr(data-label);
-    display: block;
-    font-size: .7rem; color: #888; text-transform: uppercase; letter-spacing: 1.2px;
-    margin: 6px 0 4px;
-  }
-  .tb-actions .tb-btn {
-    background: #fff;
-    border: 1px solid #1565C0;
-    color: #1565C0;
-    padding: 11px 12px;
-    font-size: .9rem;
-    font-weight: 600;
-    text-align: left;
-    border-radius: 7px;
-    min-height: 42px;
-    cursor: pointer;
-    touch-action: manipulation;
-    -webkit-tap-highlight-color: rgba(21,101,192,.25);
-    transition: background .15s, color .15s, transform .05s;
-  }
-  /* Skip :hover on touch devices — iOS turns first tap into a hover
-     instead of a click, which made the buttons feel "disabled". */
-  @media (hover: hover) {
-    .tb-actions .tb-btn:hover { background: #E3F2FD; }
-  }
-  .tb-actions .tb-btn:active { background: #1565C0; color: #fff; transform: scale(.98); }
-
-  .tb-actions .ctrl {
-    flex-direction: row; gap: 8px; flex-wrap: wrap;
-    color: #213547; font-size: .82rem;
-  }
-  .tb-actions .ctrl select {
-    background: #f6f8fb;
-    border: 1px solid #d6dde6;
-    color: #213547;
-    padding: 8px 10px;
-    border-radius: 6px;
-    flex: 1; min-width: 100px;
-  }
-  .tb-actions .ctrl select option { background: #fff; color: #213547; }
-
-  .drawer-backdrop {
-    display: block;
-    position: fixed; inset: 0;
-    background: rgba(0,0,0,.45);
-    opacity: 0; pointer-events: none;
-    transition: opacity .25s;
-    z-index: 199;
-  }
-  .drawer-backdrop.open { opacity: 1; pointer-events: auto; }
 
   #grid-wrap { padding: 10px; }
   #grid-container { gap: 10px; }
@@ -3015,10 +3007,8 @@ async function sendCfg() {
     closeModal('modal-cfg');
 }
 
-// ── Drawer (mobile/tablet hamburger menu) ─────────────────────────────────────
-function isDrawerMode() { return window.matchMedia('(max-width: 1180px)').matches; }
+// ── Drawer (menú de hamburguesa — todas las resoluciones) ─────────────────────
 function openDrawer() {
-    if (!isDrawerMode()) return;
     document.getElementById('tb-actions').setAttribute('data-drawer-open', 'true');
     document.getElementById('drawer-backdrop').classList.add('open');
     document.getElementById('hamburger').classList.add('open');
@@ -3067,9 +3057,6 @@ document.querySelectorAll('#tb-actions [data-drawer-action]').forEach(btn => {
         }
     });
 });
-
-// Reset drawer state when crossing the breakpoint (avoid getting stuck open on resize)
-window.matchMedia('(max-width: 1180px)').addEventListener('change', closeDrawer);
 
 // Pair dialog: la implementación completa vive en el <script> de Pair más abajo,
 // que depende de CodeMirror — ahora servido localmente desde /vendor/cm.bundle.js
