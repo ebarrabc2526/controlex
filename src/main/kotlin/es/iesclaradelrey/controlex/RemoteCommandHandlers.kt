@@ -195,6 +195,13 @@ object RemoteCommandHandlers {
                     // Legacy flat shape ({jpegQuality?,fps?,maxWidth?}) is also handled inside applyJson.
                     project.service<QualityConfig>().applyJson(verified)
                 }
+                "mode-set" -> {
+                    // mode = "examen" (capturas periódicas ON) | "clase" (OFF, solo
+                    // latido + streaming en vivo bajo demanda).
+                    val mode = strField("mode", verified) ?: "examen"
+                    project.service<DynamicConfig>().captureEnabled = (mode != "clase")
+                    log.info("Controlex: modo aplicado = $mode (captureEnabled=${mode != "clase"})")
+                }
                 else -> log.warn("Controlex: tipo de comando desconocido: $type")
             }
         } catch (e: Exception) {

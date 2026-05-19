@@ -55,6 +55,15 @@ body {
 }
 .tb-quality:hover { background: rgba(255,255,255,.28); }
 .tb-quality.is-max { background: #ffd54f; color: #1565C0; border-color: #ffd54f; }
+.tb-mode {
+  font-size: .72rem; font-weight: 700; white-space: nowrap;
+  background: rgba(255,255,255,.15); border: 1px solid rgba(255,255,255,.3);
+  color: #fff; padding: 4px 10px; border-radius: 14px; cursor: pointer;
+  transition: background .15s;
+}
+.tb-mode:hover { background: rgba(255,255,255,.28); }
+.tb-mode.is-exam  { background: #d32f2f; color: #fff; border-color: #d32f2f; }
+.tb-mode.is-class { background: #43a047; color: #fff; border-color: #43a047; }
 .tb-help-inbox {
   font-size: .78rem; font-weight: 700; white-space: nowrap;
   background: rgba(255,255,255,.15); border: 1px solid rgba(255,255,255,.3);
@@ -182,7 +191,7 @@ body {
 .tb-inline > * { flex-shrink: 0; }
 .tb-inline .hamburger { margin-left: auto; }
 /* Los elementos fijos de la izquierda no se encogen: solo cede .tb-inline. */
-.toolbar > h1, .tb-count, .tb-quality, .tb-help-inbox, .tb-chat { flex-shrink: 0; }
+.toolbar > h1, .tb-count, .tb-quality, .tb-mode, .tb-help-inbox, .tb-chat { flex-shrink: 0; }
 
 /* Mode buttons */
 .mode-btn {
@@ -272,6 +281,20 @@ body {
   transition: opacity .15s;
 }
 .card-thumb img:hover { opacity: .9; }
+/* Modo clase: capturas en pausa → miniatura atenuada + sello "EN PAUSA". */
+.client-card.is-capture-paused .card-thumb img { opacity: .35; filter: grayscale(.6); }
+.card-paused-stamp {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+  background: rgba(0,0,0,.55); color: #fff; font-size: .7rem; font-weight: 700;
+  padding: 4px 9px; border-radius: 10px; pointer-events: none; white-space: nowrap;
+}
+/* Insignia de modo en la cabecera de la tarjeta. */
+.card-mode {
+  font-size: .62rem; font-weight: 700; padding: 1px 6px; border-radius: 9px;
+  cursor: pointer; margin-left: auto; flex-shrink: 0;
+}
+.card-mode.is-class { background: #e8f5e9; color: #2e7d32; border: 1px solid #a5d6a7; }
+.card-mode.is-exam  { background: #ffebee; color: #c62828; border: 1px solid #ef9a9a; }
 .mosaic-check {
   position: absolute;
   top: 6px; right: 6px;
@@ -667,6 +690,20 @@ body {
 }
 .q-tab:hover { color: #1565C0; }
 .q-tab.active { color: #1565C0; border-bottom-color: #1565C0; font-weight: 700; }
+/* Mode modal: reuses the quality tab look. */
+.m-tab {
+  background: transparent; border: 0; padding: 8px 14px;
+  font-size: .85rem; cursor: pointer; color: #666;
+  border-bottom: 2px solid transparent; transition: all .15s;
+}
+.m-tab:hover { color: #1565C0; }
+.m-tab.active { color: #1565C0; border-bottom-color: #1565C0; font-weight: 700; }
+.m-choice { display: flex; flex-direction: column; gap: 10px; margin: 14px 0 4px; }
+.m-opt { display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: .9rem; }
+.m-opt small { color: #999; }
+.m-pill { font-weight: 700; padding: 3px 10px; border-radius: 12px; }
+.m-pill.is-exam  { background: #ffebee; color: #c62828; border: 1px solid #ef9a9a; }
+.m-pill.is-class { background: #e8f5e9; color: #2e7d32; border: 1px solid #a5d6a7; }
 .q-row { display: flex; justify-content: space-between; align-items: center; margin: 14px 0 4px; font-size: .88rem; color: #333; }
 .q-row .q-val { font-family: monospace; color: #1565C0; font-weight: 600; }
 .q-slider { width: 100%; accent-color: #1565C0; cursor: pointer; }
@@ -913,6 +950,7 @@ body {
   <h1>CONTROLEX<span class="tb-ver" id="tb-ver"></span></h1>
   <span class="tb-count" id="tb-count">—</span>
   <span class="tb-quality" id="tb-quality" onclick="openQuality()" title="Calidad global activa — pulsa para configurar">🎚 …</span>
+  <span class="tb-mode" id="tb-mode" onclick="openMode()" title="Modo de operación (Clase = sin capturas periódicas / Examen = todo activo) — pulsa para configurar">🎓 …</span>
   <span class="tb-help-inbox" id="tb-help-inbox" onclick="openHelpInbox()" title="Bandeja de peticiones de ayuda">🆘 <span id="help-pending-count">0</span></span>
   <span class="tb-chat" id="tb-chat" onclick="openChat()" title="Chat con los alumnos">💬 <span id="chat-unread-count">0</span></span>
 
@@ -995,6 +1033,7 @@ body {
       <button class="tb-btn" type="button" data-drawer-action="openMsgAll">📢 Mensaje a todos</button>
       <button class="tb-btn" type="button" data-drawer-action="openCfgAll">⚙ Config global</button>
       <button class="tb-btn" type="button" data-drawer-action="openQuality" title="Calidad JPEG, FPS y resolución (global / por categoría / por cliente)">🎚 Calidad</button>
+      <button class="tb-btn" type="button" data-drawer-action="openMode" title="Modo Clase / Examen (global / por categoría / por cliente)">🎓 Modo</button>
     </div>
 
     <div class="drawer-group" data-label="Mantenimiento">
@@ -1234,6 +1273,34 @@ body {
       <button onclick="qualityResetScope()" title="Borra los ajustes de este scope (los clientes vuelven a heredar)">Resetear</button>
       <button onclick="qualityMaxQuality()" title="PNG sin pérdida + resolución original en panel y live">🔥 Máxima calidad</button>
       <button class="btn-primary" onclick="qualityApply()">Aplicar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Mode modal ─────────────────────────────────────────────────────────────── -->
+<div id="modal-mode" class="modal" style="display:none">
+  <div class="modal-box" style="width:480px">
+    <h2>🎓 Modo de operación</h2>
+    <p class="sub"><strong>Examen</strong>: todo activo (capturas periódicas + live). <strong>Clase</strong>: sin capturas periódicas; solo streaming en vivo bajo demanda. <strong>Cliente</strong> manda sobre <strong>categoría</strong>, y categoría sobre <strong>global</strong>.</p>
+    <div class="q-tabs">
+      <button class="m-tab active" data-scope="global"   onclick="modeSetScope('global')">Global</button>
+      <button class="m-tab"        data-scope="category" onclick="modeSetScope('category')">Categoría</button>
+      <button class="m-tab"        data-scope="client"   onclick="modeSetScope('client')">Cliente</button>
+    </div>
+    <div id="m-target-row" style="display:none">
+      <select id="m-target" class="q-target" onchange="modeLoadCurrent()"></select>
+    </div>
+
+    <div class="m-choice">
+      <label class="m-opt"><input type="radio" name="m-mode" value="examen"> <span class="m-pill is-exam">🔴 Examen</span> <small>capturas periódicas + live</small></label>
+      <label class="m-opt"><input type="radio" name="m-mode" value="clase"> <span class="m-pill is-class">🟢 Clase</span> <small>solo live bajo demanda</small></label>
+    </div>
+    <p class="q-hint" id="m-inherit-hint" style="display:none"></p>
+
+    <div class="modal-actions">
+      <button onclick="closeModal('modal-mode')">Cancelar</button>
+      <button onclick="modeResetScope()" title="Borra el modo de este scope (vuelve a heredar del nivel superior)">Resetear</button>
+      <button class="btn-primary" onclick="modeApply()">Aplicar</button>
     </div>
   </div>
 </div>
@@ -2090,6 +2157,7 @@ document.addEventListener('DOMContentLoaded', () => {
     updateHiddenCount();
     updateSelectCount();
     refreshQualityBadge();
+    refreshModeBadge();
     fetchHelpHistory();
     fetchChatSummaries();
     // Enter envía; Ctrl/⌘+Enter (y Shift+Enter) inserta salto de línea.
@@ -2456,7 +2524,14 @@ function cardClasses(c) {
     if (selectedMosaic.has(c.clientId)) cls += ' selected';
     if (selected.has(c.clientId))       cls += ' is-selected';
     if (hidden.has(c.clientId))         cls += ' is-hidden-shown';
+    if (c.capturePaused)                cls += ' is-capture-paused';
     return cls;
+}
+
+// Insignia de modo en la cabecera. Click → abre el modal de modo para ese cliente.
+function modeBadgeHTML(c) {
+    const isClass = c.mode === 'clase';
+    return `<span class="card-mode ${isClass ? 'is-class' : 'is-exam'}" title="Modo ${isClass ? 'Clase (sin capturas periódicas)' : 'Examen (todo activo)'} — pulsa para cambiar" onclick="event.stopPropagation();openModeForClient('${esc(c.clientId)}')">${isClass ? '🟢' : '🔴'}</span>`;
 }
 
 function buildCard(c) {
@@ -2476,6 +2551,17 @@ function updateCard(el, c) {
     el.querySelector('.card-ip').textContent = displayName;
     el.querySelector('.card-ip').title = c.ip;
     el.querySelector('.last-seen').textContent = timeAgo(c.lastSeen);
+    // Insignia de modo en la cabecera
+    const oldBadge = el.querySelector('.card-mode');
+    if (oldBadge) oldBadge.outerHTML = modeBadgeHTML(c);
+    // Sello "capturas en pausa" sobre la miniatura
+    const thumb = el.querySelector('.card-thumb');
+    const stamp = thumb?.querySelector('.card-paused-stamp');
+    if (c.capturePaused && !stamp && thumb) {
+        thumb.insertAdjacentHTML('beforeend', '<span class="card-paused-stamp">⏸ Capturas en pausa (modo Clase)</span>');
+    } else if (!c.capturePaused && stamp) {
+        stamp.remove();
+    }
     el.querySelector('.card-info').innerHTML = infoHTML(c) +
         buildBadgesHTML(c);
     // image is refreshed independently by setImgRefresh — don't touch src here
@@ -2504,11 +2590,13 @@ function cardInner(c) {
   <span class="dot ${c.online ? 'on' : 'off'}"></span>
   <span class="card-ip" title="${esc(c.ip)}">${displayName}</span>
   <span class="last-seen">${timeAgo(c.lastSeen)}</span>
+  ${modeBadgeHTML(c)}
 </div>
 <div class="card-thumb" style="position:relative">
   <img src="${imgUrl(c.clientId)}" alt="Captura"
        loading="lazy"
        onclick="openFull('${esc(c.clientId)}')">
+  ${c.capturePaused ? '<span class="card-paused-stamp">⏸ Capturas en pausa (modo Clase)</span>' : ''}
   <input class="card-select-check" type="checkbox" title="Seleccionar"
          ${selected.has(c.clientId) ? 'checked' : ''}
          onclick="event.stopPropagation()"
@@ -3061,7 +3149,7 @@ function toggleDrawer() {
 //   2. Errors are surfaced via alert (so a broken action is obvious).
 //   3. The drawer always closes, even on error.
 const drawerActions = {
-    showAll, hideAll, openHiddenModal, openQuality, pruneOffline, wipeAll,
+    showAll, hideAll, openHiddenModal, openQuality, openMode, pruneOffline, wipeAll,
     selectAll, clearSelection, openSelectCategory,
     selectionShow, selectionHide, openActionsBulk,
     showHiddenInGrid: showHiddenInGridOn,
@@ -3425,6 +3513,147 @@ async function qualityResetScope() {
     refreshQualityBadge();
 }
 
+// ── Mode dialog (Clase / Examen) ───────────────────────────────────────────────
+const MODE_DEFAULT = 'examen';
+let mScope = 'global';
+let mStateCache = null;
+let mDefault = MODE_DEFAULT;
+
+function modeLabel(m) { return m === 'clase' ? '🟢 Clase' : '🔴 Examen'; }
+
+async function openMode(presetScope, presetTarget) {
+    mScope = presetScope || 'global';
+    document.querySelectorAll('.m-tab').forEach(t => t.classList.toggle('active', t.dataset.scope === mScope));
+    document.getElementById('m-target-row').style.display = mScope === 'global' ? 'none' : '';
+    try {
+        const r = await fetch('/api/dashboard/mode');
+        const j = await r.json();
+        mStateCache = j.state || { global: null, byCategory: {}, byClient: {} };
+        mDefault = j.default || MODE_DEFAULT;
+    } catch (_) { mStateCache = { global: null, byCategory: {}, byClient: {} }; }
+    modeRebuildTargets(presetTarget);
+    modeLoadCurrent();
+    document.getElementById('modal-mode').style.display = 'flex';
+}
+
+function modeSetScope(scope) {
+    mScope = scope;
+    document.querySelectorAll('.m-tab').forEach(t => t.classList.toggle('active', t.dataset.scope === mScope));
+    document.getElementById('m-target-row').style.display = mScope === 'global' ? 'none' : '';
+    modeRebuildTargets();
+    modeLoadCurrent();
+}
+
+function modeRebuildTargets(presetTarget) {
+    const sel = document.getElementById('m-target');
+    sel.innerHTML = '';
+    if (mScope === 'category') {
+        const cats = new Set();
+        for (const c of clients) if (c.categoryMain) cats.add(c.categoryMain);
+        for (const k of Object.keys(mStateCache?.byCategory || {})) cats.add(k);
+        const list = [...cats].sort();
+        if (list.length === 0) { sel.innerHTML = '<option value="">— sin categorías —</option>'; return; }
+        for (const cat of list) sel.add(new Option(cat, cat));
+    } else if (mScope === 'client') {
+        const list = [...clients].sort((a,b) => a.seqNum - b.seqNum);
+        if (list.length === 0) { sel.innerHTML = '<option value="">— sin clientes —</option>'; return; }
+        for (const c of list) {
+            const label = `#${c.seqNum} · ${c.nickname || c.clientId.slice(0,8)} (${c.ip})`;
+            sel.add(new Option(label, c.clientId));
+        }
+    }
+    if (presetTarget) sel.value = presetTarget;
+}
+
+// {own, effective}: own = el valor fijado en este scope (o null si hereda);
+// effective = lo que realmente se aplica tras la cascada global→cat→cliente.
+function modeResolve() {
+    if (!mStateCache) return { own: null, effective: mDefault };
+    if (mScope === 'global') {
+        return { own: mStateCache.global || null, effective: mStateCache.global || mDefault };
+    }
+    const t = document.getElementById('m-target').value;
+    if (mScope === 'category') {
+        const own = (mStateCache.byCategory || {})[t] || null;
+        return { own, effective: own || mStateCache.global || mDefault };
+    }
+    // client
+    const own = (mStateCache.byClient || {})[t] || null;
+    const c = clients.find(x => x.clientId === t);
+    const cat = c?.categoryMain;
+    const inherited = (cat && mStateCache.byCategory?.[cat]) || mStateCache.global || mDefault;
+    return { own, effective: own || inherited };
+}
+
+function modeLoadCurrent() {
+    const { own, effective } = modeResolve();
+    const val = own || effective;
+    document.querySelectorAll('input[name="m-mode"]').forEach(r => { r.checked = (r.value === val); });
+    const hint = document.getElementById('m-inherit-hint');
+    if (!own && mScope !== 'global') {
+        hint.style.display = '';
+        hint.textContent = `Sin modo propio en este scope → hereda «${modeLabel(effective)}». Elegir uno lo fija aquí.`;
+    } else if (!own && mScope === 'global') {
+        hint.style.display = '';
+        hint.textContent = `Sin modo global definido → por defecto «${modeLabel(mDefault)}».`;
+    } else {
+        hint.style.display = 'none';
+    }
+}
+
+async function modeApply() {
+    const checked = document.querySelector('input[name="m-mode"]:checked');
+    if (!checked) { alert('Elige un modo.'); return; }
+    const body = { scope: mScope, mode: checked.value };
+    if (mScope !== 'global') {
+        body.target = document.getElementById('m-target').value;
+        if (!body.target) { alert('Selecciona un objetivo.'); return; }
+    }
+    try {
+        const r = await fetch('/api/dashboard/mode', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+        const j = await r.json();
+        if (!r.ok) { alert(j.error || 'Error aplicando modo'); return; }
+    } catch (e) { alert(e.message); return; }
+    closeModal('modal-mode');
+    refreshModeBadge();
+}
+
+async function modeResetScope() {
+    const target = mScope === 'global' ? '' : document.getElementById('m-target').value;
+    if (mScope !== 'global' && !target) { alert('Selecciona un objetivo.'); return; }
+    if (!confirm(mScope === 'global' ? '¿Borrar el modo global?' : `¿Borrar el modo de "${target}"?`)) return;
+    try {
+        await fetch('/api/dashboard/mode', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ scope: 'reset-' + mScope, target })
+        });
+    } catch (e) { alert(e.message); return; }
+    closeModal('modal-mode');
+    refreshModeBadge();
+}
+
+// Toolbar badge: muestra el modo global efectivo.
+async function refreshModeBadge() {
+    try {
+        const r = await fetch('/api/dashboard/mode');
+        const j = await r.json();
+        const g = j.state?.global || j.default || MODE_DEFAULT;
+        const el = document.getElementById('tb-mode');
+        const isClass = g === 'clase';
+        el.textContent = isClass ? '🎓 Clase' : '🎓 Examen';
+        el.classList.toggle('is-class', isClass);
+        el.classList.toggle('is-exam', !isClass);
+    } catch (_) { /* keep placeholder */ }
+}
+
+// Atajo: cambiar el modo de un cliente concreto desde su insignia.
+function openModeForClient(clientId) { openMode('client', clientId); }
+
 // ── Utilities ─────────────────────────────────────────────────────────────────
 function closeModal(id) { document.getElementById(id).style.display = 'none'; }
 
@@ -3441,13 +3670,13 @@ function timeAgo(iso) {
 }
 
 // Close modals on backdrop click / Escape
-['modal-msg', 'modal-cfg', 'modal-hidden', 'modal-quality'].forEach(id => {
+['modal-msg', 'modal-cfg', 'modal-hidden', 'modal-quality', 'modal-mode'].forEach(id => {
     document.getElementById(id).addEventListener('click', function(e) {
         if (e.target === this) closeModal(id);
     });
 });
 document.addEventListener('keydown', e => {
-    if (e.key === 'Escape') { closeModal('modal-msg'); closeModal('modal-cfg'); closeModal('modal-hidden'); closeModal('modal-quality'); closeFull(); closeDrawer(); }
+    if (e.key === 'Escape') { closeModal('modal-msg'); closeModal('modal-cfg'); closeModal('modal-hidden'); closeModal('modal-quality'); closeModal('modal-mode'); closeFull(); closeDrawer(); }
 });
 </script>
 

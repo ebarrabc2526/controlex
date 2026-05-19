@@ -15,6 +15,7 @@ const { WebSocketServer, WebSocket } = require('ws');
 
 const CATEGORIES_PATH = path.join(os.homedir(), '.controlex-server', 'categories.json');
 const QUALITY_PATH    = path.join(os.homedir(), '.controlex-server', 'quality.json');
+const MODE_PATH       = path.join(os.homedir(), '.controlex-server', 'mode.json');
 const HELP_PATH       = path.join(os.homedir(), '.controlex-server', 'help-requests.json');
 const MAX_HELP_REQUESTS = 500;
 const CHAT_PATH       = path.join(os.homedir(), '.controlex-server', 'chat.json');
@@ -303,6 +304,57 @@ function pushQuality(clientId) {
     return pushCommand(clientId, { type: 'quality-set', ...eff });
 }
 
+// ── Operating mode persistence ─────────────────────────────────────────────────
+// "examen" → todo activo (capturas periódicas + streaming en vivo). Comportamiento
+// histórico, y default cuando no hay nada configurado.
+// "clase"  → capturas periódicas OFF (la cuadrícula no se refresca); el streaming
+//            en vivo bajo demanda sigue disponible.
+// Resolución por cliente con la misma precedencia que la calidad:
+//   byClient > byCategory > global > "examen".
+const MODE_VALUES = ['examen', 'clase'];
+const DEFAULT_MODE = 'examen';
+
+function sanitizeMode(v) {
+    return MODE_VALUES.includes(v) ? v : null;
+}
+
+const modeState = (() => {
+    const fallback = { global: null, byCategory: {}, byClient: {} };
+    try {
+        fs.mkdirSync(path.dirname(MODE_PATH), { recursive: true });
+        if (fs.existsSync(MODE_PATH)) {
+            const raw = JSON.parse(fs.readFileSync(MODE_PATH, 'utf8'));
+            const out = { global: sanitizeMode(raw.global), byCategory: {}, byClient: {} };
+            for (const k of Object.keys(raw.byCategory || {})) {
+                const m = sanitizeMode(raw.byCategory[k]); if (m) out.byCategory[k] = m;
+            }
+            for (const k of Object.keys(raw.byClient || {})) {
+                const m = sanitizeMode(raw.byClient[k]); if (m) out.byClient[k] = m;
+            }
+            return out;
+        }
+    } catch (e) { console.warn('[controlex] no se pudo leer mode.json:', e.message); }
+    return fallback;
+})();
+
+function persistMode() {
+    try { fs.writeFileSync(MODE_PATH, JSON.stringify(modeState, null, 2)); }
+    catch (e) { console.warn('[controlex] no se pudo escribir mode.json:', e.message); }
+}
+
+function effectiveMode(clientId) {
+    const c = clients.get(clientId);
+    const cat = c?.categoryMain || null;
+    return modeState.byClient[clientId]
+        || (cat ? modeState.byCategory[cat] : null)
+        || modeState.global
+        || DEFAULT_MODE;
+}
+
+function pushMode(clientId) {
+    return pushCommand(clientId, { type: 'mode-set', mode: effectiveMode(clientId) });
+}
+
 // In-memory state
 const clients = new Map();
 const pendingCommands = new Map();
@@ -334,7 +386,9 @@ function clientView(c) {
         name:                c.name || '',
         categoryMain:        c.categoryMain || null,
         nickname:            c.nickname || null,
-        extraCategories:     extraCategories.get(c.clientId) || []
+        extraCategories:     extraCategories.get(c.clientId) || [],
+        mode:                effectiveMode(c.clientId),
+        capturePaused:       !!c.capturePaused
     };
 }
 
@@ -611,8 +665,12 @@ app.post('/api/screenshot', requireClientAuth, (req, res) => {
         captureFreqMin, captureFreqMax, transmitFreqSeconds, screenshot, name
     } = req.body;
 
-    if (!clientId || !screenshot) {
-        return res.status(400).json({ error: 'Faltan campos requeridos: clientId, screenshot' });
+    // En modo clase el cliente sigue latiendo (para no aparecer offline y poder
+    // recibir comandos/config) pero NO adjunta captura. Un POST sin screenshot
+    // es un latido: mantiene presencia y conserva la última miniatura conocida.
+    const isHeartbeat = !screenshot;
+    if (!clientId) {
+        return res.status(400).json({ error: 'Falta campo requerido: clientId' });
     }
 
     const rawName = String(name || '').trim();
@@ -645,6 +703,11 @@ app.post('/api/screenshot', requireClientAuth, (req, res) => {
         }
     }
 
+    // Latido sin captura → conservar la miniatura previa; captura nueva → reemplazar.
+    const screenshotData = isHeartbeat
+        ? (existing ? existing.screenshotData : Buffer.alloc(0))
+        : Buffer.from(screenshot, 'base64');
+
     clients.set(clientId, {
         clientId,
         seqNum,
@@ -657,7 +720,8 @@ app.post('/api/screenshot', requireClientAuth, (req, res) => {
         captureFreqMax:     Number(captureFreqMax)     || 120,
         transmitFreqSeconds:Number(transmitFreqSeconds)|| 30,
         lastSeen:           new Date(),
-        screenshotData:     Buffer.from(screenshot, 'base64'),
+        screenshotData,
+        capturePaused:      isHeartbeat,
         name:               rawName,
         categoryMain,
         nickname
@@ -668,9 +732,9 @@ app.post('/api/screenshot', requireClientAuth, (req, res) => {
 
     broadcast(existing ? 'update' : 'add', clientView(clients.get(clientId)));
 
-    // Resync quality config with the client whenever its category changes
-    // (or on first registration). Cheap to repeat; the plugin is idempotent.
-    if (!existing || existing.categoryMain !== categoryMain) pushQuality(clientId);
+    // Resync quality + modo con el cliente al registrarse o al cambiar de
+    // categoría (cambia el modo heredado). Idempotente, barato de repetir.
+    if (!existing || existing.categoryMain !== categoryMain) { pushQuality(clientId); pushMode(clientId); }
 
     res.json({ commands });
 });
@@ -1380,6 +1444,60 @@ app.post('/api/dashboard/quality', requireApiAuth, (req, res) => {
     let pushed = 0;
     for (const id of affectedClientIds) { if (pushQuality(id)) pushed++; }
     res.json({ ok: true, pushed, state: qualityState });
+});
+
+// ── Operating mode (clase / examen) ────────────────────────────────────────────
+app.get('/api/dashboard/mode', requireApiAuth, (req, res) => {
+    res.json({ state: modeState, default: DEFAULT_MODE });
+});
+
+app.post('/api/dashboard/mode', requireApiAuth, (req, res) => {
+    const { scope, target, mode } = req.body || {};
+    const key = String(target || '').trim();
+
+    let affectedClientIds = [];
+
+    if (scope === 'global') {
+        const m = sanitizeMode(mode);
+        if (!m) return res.status(400).json({ error: 'mode inválido (clase|examen)' });
+        modeState.global = m;
+        affectedClientIds = Array.from(clients.keys());
+    } else if (scope === 'category') {
+        const m = sanitizeMode(mode);
+        if (!key) return res.status(400).json({ error: 'target (categoría) obligatorio' });
+        if (!m) return res.status(400).json({ error: 'mode inválido (clase|examen)' });
+        modeState.byCategory[key] = m;
+        affectedClientIds = Array.from(clients.values()).filter(c => c.categoryMain === key).map(c => c.clientId);
+    } else if (scope === 'client') {
+        const m = sanitizeMode(mode);
+        if (!key) return res.status(400).json({ error: 'target (clientId) obligatorio' });
+        if (!m) return res.status(400).json({ error: 'mode inválido (clase|examen)' });
+        modeState.byClient[key] = m;
+        if (clients.has(key)) affectedClientIds = [key];
+    } else if (scope === 'reset-global') {
+        modeState.global = null;
+        affectedClientIds = Array.from(clients.keys());
+    } else if (scope === 'reset-category') {
+        if (!key) return res.status(400).json({ error: 'target (categoría) obligatorio' });
+        delete modeState.byCategory[key];
+        affectedClientIds = Array.from(clients.values()).filter(c => c.categoryMain === key).map(c => c.clientId);
+    } else if (scope === 'reset-client') {
+        if (!key) return res.status(400).json({ error: 'target (clientId) obligatorio' });
+        delete modeState.byClient[key];
+        if (clients.has(key)) affectedClientIds = [key];
+    } else {
+        return res.status(400).json({ error: 'scope inválido' });
+    }
+    persistMode();
+
+    let pushed = 0;
+    for (const id of affectedClientIds) { if (pushMode(id)) pushed++; }
+    // El cambio de modo altera mode/capturePaused en la vista de cada cliente:
+    // notifica al panel para que actualice badges al instante.
+    for (const id of affectedClientIds) {
+        const c = clients.get(id); if (c) broadcast('update', clientView(c));
+    }
+    res.json({ ok: true, pushed, state: modeState });
 });
 
 app.post('/api/dashboard/categories', requireApiAuth, (req, res) => {

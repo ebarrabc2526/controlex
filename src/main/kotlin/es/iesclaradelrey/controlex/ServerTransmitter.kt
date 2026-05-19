@@ -81,18 +81,24 @@ class ServerTransmitter(private val project: Project) : Disposable {
     }
 
     private fun transmit() {
-        val q = project.service<QualityConfig>()
-        val jpeg = try {
-            if (q.panelFormat == "png")
-                ScreenshotCapturer.captureAllScreensAsPng(q.panelMaxWidth)
-            else
-                ScreenshotCapturer.captureAllScreensAsJpeg(q.panelJpegFloat(), q.panelMaxWidth)
-        } catch (t: Throwable) {
-            log.warn("Controlex: error capturando JPEG para transmisión", t)
-            return
-        }
-        val b64 = Base64.getEncoder().encodeToString(jpeg)
         val dynCfg = project.service<DynamicConfig>()
+        // Modo clase: no se captura miniatura; se envía un latido sin screenshot
+        // para seguir online y recibir comandos/config. Streaming en vivo intacto.
+        val b64: String? = if (!dynCfg.captureEnabled) {
+            null
+        } else {
+            val q = project.service<QualityConfig>()
+            val jpeg = try {
+                if (q.panelFormat == "png")
+                    ScreenshotCapturer.captureAllScreensAsPng(q.panelMaxWidth)
+                else
+                    ScreenshotCapturer.captureAllScreensAsJpeg(q.panelJpegFloat(), q.panelMaxWidth)
+            } catch (t: Throwable) {
+                log.warn("Controlex: error capturando JPEG para transmisión", t)
+                return
+            }
+            Base64.getEncoder().encodeToString(jpeg)
+        }
         val body = buildRequestJson(b64, dynCfg)
 
         var newStatus: Status = Status.DISCONNECTED
@@ -140,7 +146,8 @@ class ServerTransmitter(private val project: Project) : Disposable {
         responseBody?.let { processResponse(it, dynCfg) }
     }
 
-    private fun buildRequestJson(b64: String, cfg: DynamicConfig): String {
+    /** [b64] null → latido (modo clase): se omite el campo screenshot. */
+    private fun buildRequestJson(b64: String?, cfg: DynamicConfig): String {
         // Cache clientId once per send to avoid multiple file reads / SHA-256 computations.
         val cId = clientId
         val ip = localIp()
@@ -157,7 +164,7 @@ class ServerTransmitter(private val project: Project) : Disposable {
             append(""","captureFreqMax":"""); append(cfg.captureMaxMs / 1000)
             append(""","transmitFreqSeconds":"""); append(cfg.transmitFreqMs / 1000)
             append(""","name":"""); append(esc(name))
-            append(""","screenshot":"""); append(esc(b64))
+            if (b64 != null) { append(""","screenshot":"""); append(esc(b64)) }
             append("}")
         }
     }
