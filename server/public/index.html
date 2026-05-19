@@ -173,6 +173,17 @@ body {
 .tb-sep { width: 1px; height: 28px; background: rgba(255,255,255,.25); flex-shrink: 0; }
 .spacer { flex: 1; }
 
+/* Overflow bar — contiene los botones inline; la hamburguesa se ancla a su
+   borde derecho y solo se muestra cuando algo tuvo que pasar al drawer. */
+.tb-inline {
+  display: flex; align-items: center; gap: 8px;
+  flex: 1; min-width: 0; overflow: hidden;
+}
+.tb-inline > * { flex-shrink: 0; }
+.tb-inline .hamburger { margin-left: auto; }
+/* Los elementos fijos de la izquierda no se encogen: solo cede .tb-inline. */
+.toolbar > h1, .tb-count, .tb-quality, .tb-help-inbox, .tb-chat { flex-shrink: 0; }
+
 /* Mode buttons */
 .mode-btn {
   background: rgba(255,255,255,.12);
@@ -733,6 +744,8 @@ body {
   border-bottom: 1px solid #f0f0f0;
 }
 .tb-actions .drawer-group:last-child { border-bottom: 0; }
+/* Grupo sin items (todo cupo en la barra) → no ocupa espacio en el drawer. */
+.tb-actions .drawer-group[hidden] { display: none; }
 .tb-actions .drawer-group[data-label]::before {
   content: attr(data-label);
   display: block;
@@ -774,6 +787,29 @@ body {
   flex: 1; min-width: 100px;
 }
 .tb-actions .ctrl select option { background: #fff; color: #213547; }
+.tb-actions .ctrl input[type=range] {
+  flex: 1; width: auto; min-width: 130px; accent-color: #1565C0;
+}
+
+/* Mode buttons (Cuadrícula / Mosaico / Carrusel / Live) viven en el drawer */
+.tb-actions .mode-btn {
+  background: #fff;
+  border: 1px solid #1565C0;
+  color: #1565C0;
+  padding: 11px 12px;
+  font-size: .9rem;
+  font-weight: 600;
+  text-align: left;
+  border-radius: 7px;
+  min-height: 42px;
+  cursor: pointer;
+}
+.tb-actions .mode-btn .mb-label { display: inline; }
+.tb-actions .mode-btn.active { background: #1565C0; color: #fff; font-weight: 700; }
+@media (hover: hover) {
+  .tb-actions .mode-btn:hover { background: #E3F2FD; }
+  .tb-actions .mode-btn.active:hover { background: #1565C0; }
+}
 
 .drawer-backdrop {
   display: block;
@@ -827,10 +863,6 @@ body {
   .toolbar { padding: 0 8px; gap: 5px; height: 50px; }
   .toolbar h1 { font-size: .82rem; letter-spacing: 1px; }
   .tb-count   { font-size: .7rem; }
-  .mode-btn   { padding: 6px 9px; font-size: .75rem; min-height: 32px; }
-  .ctrl       { font-size: .72rem; gap: 4px; }
-  .ctrl input[type=range] { width: 70px; }
-  .ctrl select { font-size: .72rem; padding: 4px 6px; }
   #grid-wrap  { padding: 8px; }
   #grid-container {
     gap: 8px;
@@ -864,9 +896,6 @@ body {
   .toolbar h1 { font-size: 0; letter-spacing: 0; }
   .toolbar h1::before { content: "CTX"; font-size: .82rem; letter-spacing: 1.5px; font-weight: 800; }
   .tb-ver { display: none; }     /* keep the CTX badge clean on tiny screens */
-  .mode-btn .mb-label { display: none; }
-  .mode-btn { padding: 6px 9px; }
-  #grid-ctrl { display: none; }   /* size slider hidden on phones; default thumb size ok */
 }
 
 /* Touch devices (no hover): keep hide button always visible */
@@ -887,63 +916,62 @@ body {
   <span class="tb-help-inbox" id="tb-help-inbox" onclick="openHelpInbox()" title="Bandeja de peticiones de ayuda">🆘 <span id="help-pending-count">0</span></span>
   <span class="tb-chat" id="tb-chat" onclick="openChat()" title="Chat con los alumnos">💬 <span id="chat-unread-count">0</span></span>
 
-  <div class="tb-sep"></div>
-
-  <button class="mode-btn active" id="btn-grid"     onclick="setView('grid')"><span class="mb-icon">⊞</span><span class="mb-label"> Cuadrícula</span></button>
-  <button class="mode-btn"        id="btn-mosaic"   onclick="setView('mosaic')"><span class="mb-icon">⊠</span><span class="mb-label"> Mosaico</span></button>
-  <button class="mode-btn"        id="btn-carousel" onclick="setView('carousel')"><span class="mb-icon">🎠</span><span class="mb-label"> Carrusel</span></button>
-
-  <div class="tb-sep"></div>
-
-  <!-- Grid controls -->
-  <div class="ctrl" id="grid-ctrl">
-    <label>Tamaño: <input type="range" id="size-slider" min="150" max="580" value="240"
-      oninput="setThumbSize(+this.value)"></label>
-    <span id="size-label">240 px</span>
+  <!-- Barra con desbordamiento: los botones viven aquí; relayoutToolbar() mueve
+       al drawer (#tb-actions) solo los que no caben, y se recalcula al
+       redimensionar. La hamburguesa va dentro y solo se ve si algo desbordó. -->
+  <div class="tb-inline" id="tb-inline">
+    <button class="hamburger" id="hamburger" aria-label="Menú" aria-controls="tb-actions" aria-expanded="false" onclick="toggleDrawer()">
+      <span></span><span></span><span></span>
+    </button>
   </div>
-
-  <!-- Mosaic controls -->
-  <div class="ctrl" id="mosaic-ctrl" style="display:none">
-    <label>Columnas:
-      <select id="mosaic-cols" onchange="setMosaicCols(this.value)">
-        <option value="1">1</option>
-        <option value="2" selected>2</option>
-        <option value="3">3</option>
-        <option value="4">4</option>
-        <option value="5">5</option>
-        <option value="6">6</option>
-        <option value="auto">Auto</option>
-      </select>
-    </label>
-  </div>
-
-  <!-- Carousel controls -->
-  <div class="ctrl" id="carousel-ctrl" style="display:none">
-    <label title="Segundos que se muestra cada pantalla del carrusel">Tiempo:
-      <input type="number" id="carousel-seconds" min="1" max="600" value="8"
-             onchange="setCarouselSeconds(this.value)" style="width:56px"> s
-    </label>
-    <label title="Número de clientes que se muestran simultáneamente en cada pantalla">Por pantalla:
-      <input type="number" id="carousel-per-page" min="1" max="20" value="1"
-             onchange="setCarouselPerPage(this.value)" style="width:48px">
-    </label>
-    <span id="carousel-page-label" style="opacity:.85"></span>
-  </div>
-
-  <div class="spacer"></div>
-
-  <button class="mode-btn" id="btn-live" onclick="toggleLive()"><span class="mb-icon">⚪</span><span class="mb-label"> Live OFF</span></button>
-
-  <button class="hamburger" id="hamburger" aria-label="Menú" aria-controls="tb-actions" aria-expanded="false" onclick="toggleDrawer()">
-    <span></span><span></span><span></span>
-  </button>
-
-  <div class="tb-sep tb-sep-actions"></div>
 
   <div class="tb-actions" id="tb-actions" data-drawer-open="false">
     <div class="drawer-header">
       <span class="drawer-title">Menú</span>
       <button class="drawer-close" aria-label="Cerrar" onclick="closeDrawer()">✕</button>
+    </div>
+
+    <div class="drawer-group" data-label="Vista">
+      <button class="mode-btn active" id="btn-grid"     onclick="setView('grid')"><span class="mb-icon">⊞</span><span class="mb-label"> Cuadrícula</span></button>
+      <button class="mode-btn"        id="btn-mosaic"   onclick="setView('mosaic')"><span class="mb-icon">⊠</span><span class="mb-label"> Mosaico</span></button>
+      <button class="mode-btn"        id="btn-carousel" onclick="setView('carousel')"><span class="mb-icon">🎠</span><span class="mb-label"> Carrusel</span></button>
+
+      <!-- Grid controls -->
+      <div class="ctrl" id="grid-ctrl">
+        <label>Tamaño: <input type="range" id="size-slider" min="150" max="580" value="240"
+          oninput="setThumbSize(+this.value)"></label>
+        <span id="size-label">240 px</span>
+      </div>
+
+      <!-- Mosaic controls -->
+      <div class="ctrl" id="mosaic-ctrl" style="display:none">
+        <label>Columnas:
+          <select id="mosaic-cols" onchange="setMosaicCols(this.value)">
+            <option value="1">1</option>
+            <option value="2" selected>2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+            <option value="5">5</option>
+            <option value="6">6</option>
+            <option value="auto">Auto</option>
+          </select>
+        </label>
+      </div>
+
+      <!-- Carousel controls -->
+      <div class="ctrl" id="carousel-ctrl" style="display:none">
+        <label title="Segundos que se muestra cada pantalla del carrusel">Tiempo:
+          <input type="number" id="carousel-seconds" min="1" max="600" value="8"
+                 onchange="setCarouselSeconds(this.value)" style="width:56px"> s
+        </label>
+        <label title="Número de clientes que se muestran simultáneamente en cada pantalla">Por pantalla:
+          <input type="number" id="carousel-per-page" min="1" max="20" value="1"
+                 onchange="setCarouselPerPage(this.value)" style="width:48px">
+        </label>
+        <span id="carousel-page-label" style="opacity:.85"></span>
+      </div>
+
+      <button class="mode-btn" id="btn-live" onclick="toggleLive()"><span class="mb-icon">⚪</span><span class="mb-label"> Live OFF</span></button>
     </div>
 
     <div class="drawer-group" data-label="Selección">
@@ -2010,6 +2038,7 @@ async function toggleLive() {
         ? '<span class="mb-icon">🟢</span><span class="mb-label"> Live ON</span>'
         : '<span class="mb-icon">⚪</span><span class="mb-label"> Live OFF</span>';
     btn.classList.toggle('active', liveOn);
+    scheduleRelayout();
     if (liveOn) {
         for (const c of clients) {
             if (!hidden.has(c.clientId)) await openLive(c.clientId);
@@ -2285,6 +2314,7 @@ function setView(v) {
     if (v === 'carousel') startCarousel();
     else stopCarousel();
 
+    scheduleRelayout();   // el control de vista activo cambia de ancho
     render();
 }
 
@@ -3057,6 +3087,76 @@ document.querySelectorAll('#tb-actions [data-drawer-action]').forEach(btn => {
         }
     });
 });
+
+// ── Toolbar overflow ──────────────────────────────────────────────────────────
+// Los botones viven en la barra superior; solo los que no caben se mueven al
+// drawer de la hamburguesa. Se recalcula al redimensionar (ResizeObserver sobre
+// #tb-inline) y al cambiar de vista. La hamburguesa va DENTRO de #tb-inline, así
+// que mostrarla/ocultarla no altera el ancho disponible → sin oscilación.
+const tbInline = document.getElementById('tb-inline');
+// Orden maestro = orden de prioridad: el primero es el que más aguanta en la
+// barra; el último es el primero en caer al drawer. Cada item recuerda su grupo
+// de origen para volver a su sitio (con su etiqueta) cuando vuelve al drawer.
+const ovfDrawerGroups = [...document.querySelectorAll('#tb-actions .drawer-group')];
+const ovfItems = [];
+ovfDrawerGroups.forEach(g => {
+    [...g.children].forEach(el => { el.__ovfGroup = g; ovfItems.push(el); });
+});
+
+function relayoutToolbar() {
+    const ham = document.getElementById('hamburger');
+    // 0. fuera separadores viejos antes de medir
+    tbInline.querySelectorAll('.tb-sep').forEach(s => s.remove());
+    // 1. todo a la barra (orden maestro) con un separador entre cada grupo, y la
+    //    hamburguesa al final visible: así su ancho — y el de los separadores —
+    //    se reservan DURANTE la medición y nada se recorta luego.
+    let prev = null;
+    for (const el of ovfItems) {
+        if (prev && el.__ovfGroup !== prev) {
+            const sep = document.createElement('div');
+            sep.className = 'tb-sep';
+            tbInline.insertBefore(sep, ham);
+        }
+        tbInline.insertBefore(el, ham);
+        prev = el.__ovfGroup;
+    }
+    ham.style.display = '';
+    // 2. mientras desborde, devolver al drawer el item de menor prioridad
+    for (let i = ovfItems.length - 1; i >= 0; i--) {
+        if (tbInline.scrollWidth <= tbInline.clientWidth + 1) break;
+        const el = ovfItems[i];
+        el.__ovfGroup.insertBefore(el, el.__ovfGroup.firstChild);
+    }
+    // 3. quitar separadores huérfanos (sin un item real a cada lado). Solo
+    //    elimina → el ancho únicamente puede bajar, nunca desborda.
+    for (const sep of [...tbInline.querySelectorAll('.tb-sep')]) {
+        const p = sep.previousElementSibling, n = sep.nextElementSibling;
+        if (!(p && p.__ovfGroup) || !(n && n.__ovfGroup)) sep.remove();
+    }
+    // 4. ocultar grupos vacíos del drawer; hamburguesa solo si algo desbordó
+    let anyInDrawer = false;
+    for (const g of ovfDrawerGroups) {
+        const has = g.children.length > 0;
+        g.hidden = !has;
+        if (has) anyInDrawer = true;
+    }
+    if (anyInDrawer) {
+        ham.style.display = '';
+    } else {
+        ham.style.display = 'none';
+        closeDrawer();
+    }
+}
+
+let _relayoutPending = false;
+function scheduleRelayout() {
+    if (_relayoutPending) return;
+    _relayoutPending = true;
+    requestAnimationFrame(() => { _relayoutPending = false; relayoutToolbar(); });
+}
+new ResizeObserver(scheduleRelayout).observe(tbInline);
+window.addEventListener('load', scheduleRelayout);
+relayoutToolbar();
 
 // Pair dialog: la implementación completa vive en el <script> de Pair más abajo,
 // que depende de CodeMirror — ahora servido localmente desde /vendor/cm.bundle.js

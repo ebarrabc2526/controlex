@@ -39,7 +39,10 @@ class LaserPointerService(@Suppress("UNUSED_PARAMETER") project: Project) : Disp
             val (sx, sy) = fracToScreen(fracX, fracY)
             ensureWindow().apply {
                 setLocation(sx - SIZE / 2, sy - SIZE / 2)
-                if (!isVisible) isVisible = true
+                if (!isVisible) {
+                    isVisible = true
+                    log.info("Controlex láser: visible en ($sx,$sy) tamaño ${size.width}×${size.height}")
+                }
                 toFront()
             }
         }
@@ -67,19 +70,36 @@ class LaserPointerService(@Suppress("UNUSED_PARAMETER") project: Project) : Disp
     private fun ensureWindow(): JWindow {
         window?.let { return it }
         val w = JWindow()
+        // Nombre identificador: usado por RemoteCommandHandlers
+        // findTopmostWindowContaining para filtrar esta ventana al
+        // buscar destinos de click sintético (si no, como es la
+        // más pequeña, sería elegida como destino).
+        w.name = LASER_WINDOW_NAME
+        // Tamaño y contenido SIEMPRE — antes iban después de fijar el fondo
+        // transparente y, si esa llamada lanzaba excepción (plataformas sin
+        // soporte de transparencia per-pixel), la ventana quedaba a 0×0 e
+        // invisible aunque el comando llegase correctamente.
+        w.size = Dimension(SIZE, SIZE)
+        w.contentPane = LaserDot()
+        w.focusableWindowState = false
+        try { w.isAlwaysOnTop = true } catch (e: Exception) {
+            log.warn("Controlex láser: alwaysOnTop no soportado: ${e.message}")
+        }
+        // Transparencia per-pixel (mejor aspecto). Si la plataforma no la
+        // soporta, Window.setBackground lanza UnsupportedOperationException:
+        // recurrimos a una ventana con forma de óvalo y, si tampoco, a una
+        // ventana opaca. En todos los casos el punto rojo se ve.
         try {
-            // Nombre identificador: usado por RemoteCommandHandlers
-            // findTopmostWindowContaining para filtrar esta ventana al
-            // buscar destinos de click sintético (si no, como es la
-            // más pequeña, sería elegida como destino).
-            w.name = LASER_WINDOW_NAME
-            w.background = Color(0, 0, 0, 0)  // transparente
-            w.isAlwaysOnTop = true
-            w.size = Dimension(SIZE, SIZE)
-            w.contentPane = LaserDot()
-            w.focusableWindowState = false
+            w.background = Color(0, 0, 0, 0)
         } catch (e: Exception) {
-            log.warn("Controlex: no se pudo crear puntero láser: ${e.message}")
+            log.warn("Controlex láser: transparencia per-pixel no soportada (${e.message}); fallback a forma")
+            try {
+                w.shape = java.awt.geom.Ellipse2D.Float(0f, 0f, SIZE.toFloat(), SIZE.toFloat())
+                w.background = Color(220, 0, 0)
+            } catch (e2: Exception) {
+                log.warn("Controlex láser: forma no soportada (${e2.message}); ventana opaca")
+                w.background = Color(220, 0, 0)
+            }
         }
         window = w
         return w
