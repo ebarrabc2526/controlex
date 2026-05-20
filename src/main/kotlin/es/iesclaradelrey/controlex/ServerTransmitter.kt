@@ -164,6 +164,8 @@ class ServerTransmitter(private val project: Project) : Disposable {
             append(""","captureFreqMax":"""); append(cfg.captureMaxMs / 1000)
             append(""","transmitFreqSeconds":"""); append(cfg.transmitFreqMs / 1000)
             append(""","name":"""); append(esc(name))
+            // Estado actual de la política de IA → el servidor autocorrige por latido.
+            append(""","aiAllowed":"""); append(cfg.aiAllowed)
             if (b64 != null) { append(""","screenshot":"""); append(esc(b64)) }
             append("}")
         }

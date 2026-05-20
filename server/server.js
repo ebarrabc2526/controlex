@@ -712,7 +712,7 @@ app.post('/api/disconnect', requireClientAuth, (req, res) => {
 app.post('/api/screenshot', requireClientAuth, (req, res) => {
     const {
         clientId, ip, hostname, projectName, intellijUser, osUser,
-        captureFreqMin, captureFreqMax, transmitFreqSeconds, screenshot, name
+        captureFreqMin, captureFreqMax, transmitFreqSeconds, screenshot, name, aiAllowed
     } = req.body;
 
     // En modo clase el cliente sigue latiendo (para no aparecer offline y poder
@@ -786,10 +786,13 @@ app.post('/api/screenshot', requireClientAuth, (req, res) => {
     // categoría (cambia lo heredado). Idempotente, barato de repetir.
     if (!existing || existing.categoryMain !== categoryMain) {
         pushQuality(clientId); pushMode(clientId); pushAi(clientId);
-    } else if (isHeartbeat !== (effectiveMode(clientId) === 'clase')) {
-        // Autocorrección: el cliente captura cuando debería estar en pausa (o
-        // viceversa) → reenvía el modo. Cubre reinicios sin cambio de categoría.
-        pushMode(clientId);
+    } else {
+        // Autocorrección por latido (cubre reinicios sin cambio de categoría):
+        // si el cliente no está en el estado esperado, reenvía el comando.
+        // Modo: se infiere del latido (sin screenshot = en pausa = clase).
+        if (isHeartbeat !== (effectiveMode(clientId) === 'clase')) pushMode(clientId);
+        // IA: el cliente reporta aiAllowed; comparar con la política efectiva.
+        if (typeof aiAllowed === 'boolean' && (aiAllowed === false) !== (effectiveAi(clientId) === 'block')) pushAi(clientId);
     }
 
     res.json({ commands });
