@@ -50,8 +50,15 @@ class ControlexStatusWidget(private val project: Project) : StatusBarWidget, Sta
         }
         val name = readClientName()
         val suffix = if (name.isNotEmpty()) " · $name" else ""
-        return "$dot Controlex v$PLUGIN_VERSION$suffix"
+        return "$dot Controlex v$PLUGIN_VERSION · ${modeLabel()}$suffix"
     }
+
+    /** Modo actual fijado por el panel (examen/clase). */
+    private fun modeLabel(): String =
+        try {
+            if (project.getService(DynamicConfig::class.java)?.captureEnabled == true) "🔴 Examen"
+            else "🟢 Clase"
+        } catch (e: Exception) { "—" }
 
     override fun getAlignment(): Float = Component.CENTER_ALIGNMENT
 
@@ -63,7 +70,10 @@ class ControlexStatusWidget(private val project: Project) : StatusBarWidget, Sta
             else                                  -> "sin acceso a internet"
         }
         val name = readClientName().ifEmpty { "(sin nombre — Tools → Controlex → Configurar nombre)" }
-        return "Controlex v$PLUGIN_VERSION — $state\nIdentidad: $name"
+        val dyn = try { project.getService(DynamicConfig::class.java) } catch (e: Exception) { null }
+        val modo = if (dyn?.captureEnabled == true) "Examen (capturas + archivo activos)" else "Clase (sin capturas ni archivo)"
+        val ia   = if (dyn?.aiAllowed == false) "bloqueada" else "permitida"
+        return "Controlex v$PLUGIN_VERSION — $state\nModo: $modo\nIA: $ia\nIdentidad: $name"
     }
 
     /** Read the persisted client name written by ConfigureNameAction. */

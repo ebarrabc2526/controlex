@@ -288,10 +288,11 @@ body {
   background: rgba(0,0,0,.55); color: #fff; font-size: .7rem; font-weight: 700;
   padding: 4px 9px; border-radius: 10px; pointer-events: none; white-space: nowrap;
 }
-/* Insignia de modo en la cabecera de la tarjeta. */
+/* Insignias de modo/IA en la cabecera de la tarjeta. */
+.card-mode-wrap { margin-left: auto; flex-shrink: 0; display: inline-flex; gap: 4px; }
 .card-mode {
   font-size: .62rem; font-weight: 700; padding: 1px 6px; border-radius: 9px;
-  cursor: pointer; margin-left: auto; flex-shrink: 0;
+  cursor: pointer; flex-shrink: 0;
 }
 .card-mode.is-class { background: #e8f5e9; color: #2e7d32; border: 1px solid #a5d6a7; }
 .card-mode.is-exam  { background: #ffebee; color: #c62828; border: 1px solid #ef9a9a; }
@@ -1277,11 +1278,11 @@ body {
   </div>
 </div>
 
-<!-- ── Mode modal ─────────────────────────────────────────────────────────────── -->
+<!-- ── Mode + AI modal ────────────────────────────────────────────────────────── -->
 <div id="modal-mode" class="modal" style="display:none">
-  <div class="modal-box" style="width:480px">
-    <h2>🎓 Modo de operación</h2>
-    <p class="sub"><strong>Examen</strong>: todo activo (capturas periódicas + live). <strong>Clase</strong>: sin capturas periódicas; solo streaming en vivo bajo demanda. <strong>Cliente</strong> manda sobre <strong>categoría</strong>, y categoría sobre <strong>global</strong>.</p>
+  <div class="modal-box" style="width:500px;max-height:90vh;overflow-y:auto">
+    <h2>🎓 Modo y plugins de IA</h2>
+    <p class="sub"><strong>Cliente</strong> manda sobre <strong>categoría</strong>, y categoría sobre <strong>global</strong>. El modo y la política de IA son independientes.</p>
     <div class="q-tabs">
       <button class="m-tab active" data-scope="global"   onclick="modeSetScope('global')">Global</button>
       <button class="m-tab"        data-scope="category" onclick="modeSetScope('category')">Categoría</button>
@@ -1291,15 +1292,27 @@ body {
       <select id="m-target" class="q-target" onchange="modeLoadCurrent()"></select>
     </div>
 
-    <div class="m-choice">
-      <label class="m-opt"><input type="radio" name="m-mode" value="examen"> <span class="m-pill is-exam">🔴 Examen</span> <small>capturas periódicas + live</small></label>
-      <label class="m-opt"><input type="radio" name="m-mode" value="clase"> <span class="m-pill is-class">🟢 Clase</span> <small>solo live bajo demanda</small></label>
+    <div class="q-section">
+      <h3 class="q-section-title">🎓 Modo <span class="q-section-hint">capturas + archivo forense</span></h3>
+      <div class="m-choice">
+        <label class="m-opt"><input type="radio" name="m-mode" value="examen"> <span class="m-pill is-exam">🔴 Examen</span> <small>capturas periódicas + carpeta controlex + live</small></label>
+        <label class="m-opt"><input type="radio" name="m-mode" value="clase"> <span class="m-pill is-class">🟢 Clase</span> <small>sin capturas ni carpeta; solo live bajo demanda</small></label>
+      </div>
+      <p class="q-hint" id="m-inherit-hint" style="display:none"></p>
     </div>
-    <p class="q-hint" id="m-inherit-hint" style="display:none"></p>
+
+    <div class="q-section">
+      <h3 class="q-section-title">🤖 Plugins de IA</h3>
+      <div class="m-choice">
+        <label class="m-opt"><input type="radio" name="m-ai" value="allow"> <span class="m-pill is-class">✅ Permitir</span> <small>el alumno puede tener plugins de IA</small></label>
+        <label class="m-opt"><input type="radio" name="m-ai" value="block"> <span class="m-pill is-exam">⛔ Bloquear</span> <small>fuerza desinstalar los plugins de IA detectados</small></label>
+      </div>
+      <p class="q-hint" id="m-ai-hint" style="display:none"></p>
+    </div>
 
     <div class="modal-actions">
       <button onclick="closeModal('modal-mode')">Cancelar</button>
-      <button onclick="modeResetScope()" title="Borra el modo de este scope (vuelve a heredar del nivel superior)">Resetear</button>
+      <button onclick="modeResetScope()" title="Borra modo y política de IA de este scope (vuelven a heredar)">Resetear</button>
       <button class="btn-primary" onclick="modeApply()">Aplicar</button>
     </div>
   </div>
@@ -2531,7 +2544,10 @@ function cardClasses(c) {
 // Insignia de modo en la cabecera. Click → abre el modal de modo para ese cliente.
 function modeBadgeHTML(c) {
     const isClass = c.mode === 'clase';
-    return `<span class="card-mode ${isClass ? 'is-class' : 'is-exam'}" title="Modo ${isClass ? 'Clase (sin capturas periódicas)' : 'Examen (todo activo)'} — pulsa para cambiar" onclick="event.stopPropagation();openModeForClient('${esc(c.clientId)}')">${isClass ? '🟢' : '🔴'}</span>`;
+    const ai = c.aiPolicy === 'block'
+        ? `<span class="card-mode is-exam" title="Plugins de IA bloqueados — pulsa para cambiar" onclick="event.stopPropagation();openModeForClient('${esc(c.clientId)}')">⛔IA</span>`
+        : '';
+    return `<span class="card-mode ${isClass ? 'is-class' : 'is-exam'}" title="Modo ${isClass ? 'Clase (sin capturas periódicas)' : 'Examen (todo activo)'} — pulsa para cambiar" onclick="event.stopPropagation();openModeForClient('${esc(c.clientId)}')">${isClass ? '🟢' : '🔴'}</span>${ai}`;
 }
 
 function buildCard(c) {
@@ -2551,9 +2567,9 @@ function updateCard(el, c) {
     el.querySelector('.card-ip').textContent = displayName;
     el.querySelector('.card-ip').title = c.ip;
     el.querySelector('.last-seen').textContent = timeAgo(c.lastSeen);
-    // Insignia de modo en la cabecera
-    const oldBadge = el.querySelector('.card-mode');
-    if (oldBadge) oldBadge.outerHTML = modeBadgeHTML(c);
+    // Insignias de modo / IA en la cabecera (contenedor estable, sin duplicar)
+    const badgeWrap = el.querySelector('.card-mode-wrap');
+    if (badgeWrap) badgeWrap.innerHTML = modeBadgeHTML(c);
     // Sello "capturas en pausa" sobre la miniatura
     const thumb = el.querySelector('.card-thumb');
     const stamp = thumb?.querySelector('.card-paused-stamp');
@@ -2590,7 +2606,7 @@ function cardInner(c) {
   <span class="dot ${c.online ? 'on' : 'off'}"></span>
   <span class="card-ip" title="${esc(c.ip)}">${displayName}</span>
   <span class="last-seen">${timeAgo(c.lastSeen)}</span>
-  ${modeBadgeHTML(c)}
+  <span class="card-mode-wrap">${modeBadgeHTML(c)}</span>
 </div>
 <div class="card-thumb" style="position:relative">
   <img src="${imgUrl(c.clientId)}" alt="Captura"
@@ -3513,24 +3529,33 @@ async function qualityResetScope() {
     refreshQualityBadge();
 }
 
-// ── Mode dialog (Clase / Examen) ───────────────────────────────────────────────
-const MODE_DEFAULT = 'examen';
+// ── Mode + AI dialog ───────────────────────────────────────────────────────────
+const MODE_DEFAULT = 'clase';
+const AI_DEFAULT = 'allow';
 let mScope = 'global';
-let mStateCache = null;
+let mStateCache = null;       // modeState
 let mDefault = MODE_DEFAULT;
+let aiStateCache = null;      // aiState
+let aiDefault = AI_DEFAULT;
 
 function modeLabel(m) { return m === 'clase' ? '🟢 Clase' : '🔴 Examen'; }
+function aiLabel(p)   { return p === 'block' ? '⛔ Bloquear' : '✅ Permitir'; }
 
 async function openMode(presetScope, presetTarget) {
     mScope = presetScope || 'global';
     document.querySelectorAll('.m-tab').forEach(t => t.classList.toggle('active', t.dataset.scope === mScope));
     document.getElementById('m-target-row').style.display = mScope === 'global' ? 'none' : '';
     try {
-        const r = await fetch('/api/dashboard/mode');
-        const j = await r.json();
-        mStateCache = j.state || { global: null, byCategory: {}, byClient: {} };
-        mDefault = j.default || MODE_DEFAULT;
-    } catch (_) { mStateCache = { global: null, byCategory: {}, byClient: {} }; }
+        const [rm, ra] = await Promise.all([fetch('/api/dashboard/mode'), fetch('/api/dashboard/ai')]);
+        const jm = await rm.json(); const ja = await ra.json();
+        mStateCache = jm.state || { global: null, byCategory: {}, byClient: {} };
+        mDefault = jm.default || MODE_DEFAULT;
+        aiStateCache = ja.state || { global: null, byCategory: {}, byClient: {} };
+        aiDefault = ja.default || AI_DEFAULT;
+    } catch (_) {
+        mStateCache = { global: null, byCategory: {}, byClient: {} };
+        aiStateCache = { global: null, byCategory: {}, byClient: {} };
+    }
     modeRebuildTargets(presetTarget);
     modeLoadCurrent();
     document.getElementById('modal-mode').style.display = 'flex';
@@ -3567,56 +3592,72 @@ function modeRebuildTargets(presetTarget) {
 
 // {own, effective}: own = el valor fijado en este scope (o null si hereda);
 // effective = lo que realmente se aplica tras la cascada global→cat→cliente.
-function modeResolve() {
-    if (!mStateCache) return { own: null, effective: mDefault };
+// Genérico para cualquier estado 3-niveles (modeState / aiState).
+function policyResolve(state, def) {
+    if (!state) return { own: null, effective: def };
     if (mScope === 'global') {
-        return { own: mStateCache.global || null, effective: mStateCache.global || mDefault };
+        return { own: state.global || null, effective: state.global || def };
     }
     const t = document.getElementById('m-target').value;
     if (mScope === 'category') {
-        const own = (mStateCache.byCategory || {})[t] || null;
-        return { own, effective: own || mStateCache.global || mDefault };
+        const own = (state.byCategory || {})[t] || null;
+        return { own, effective: own || state.global || def };
     }
-    // client
-    const own = (mStateCache.byClient || {})[t] || null;
+    const own = (state.byClient || {})[t] || null;
     const c = clients.find(x => x.clientId === t);
     const cat = c?.categoryMain;
-    const inherited = (cat && mStateCache.byCategory?.[cat]) || mStateCache.global || mDefault;
+    const inherited = (cat && state.byCategory?.[cat]) || state.global || def;
     return { own, effective: own || inherited };
 }
 
-function modeLoadCurrent() {
-    const { own, effective } = modeResolve();
-    const val = own || effective;
-    document.querySelectorAll('input[name="m-mode"]').forEach(r => { r.checked = (r.value === val); });
-    const hint = document.getElementById('m-inherit-hint');
+function setHint(hintId, own, effective, label, what) {
+    const hint = document.getElementById(hintId);
     if (!own && mScope !== 'global') {
         hint.style.display = '';
-        hint.textContent = `Sin modo propio en este scope → hereda «${modeLabel(effective)}». Elegir uno lo fija aquí.`;
+        hint.textContent = `Sin ${what} propio en este scope → hereda «${label(effective)}». Elegir uno lo fija aquí.`;
     } else if (!own && mScope === 'global') {
         hint.style.display = '';
-        hint.textContent = `Sin modo global definido → por defecto «${modeLabel(mDefault)}».`;
+        hint.textContent = `Sin ${what} global definido → por defecto «${label(effective)}».`;
     } else {
         hint.style.display = 'none';
     }
 }
 
+function modeLoadCurrent() {
+    const m = policyResolve(mStateCache, mDefault);
+    const mVal = m.own || m.effective;
+    document.querySelectorAll('input[name="m-mode"]').forEach(r => { r.checked = (r.value === mVal); });
+    setHint('m-inherit-hint', m.own, m.effective, modeLabel, 'modo');
+
+    const a = policyResolve(aiStateCache, aiDefault);
+    const aVal = a.own || a.effective;
+    document.querySelectorAll('input[name="m-ai"]').forEach(r => { r.checked = (r.value === aVal); });
+    setHint('m-ai-hint', a.own, a.effective, aiLabel, 'política de IA');
+}
+
+async function postPolicy(endpoint, body) {
+    const r = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || 'Error');
+    return j;
+}
+
 async function modeApply() {
-    const checked = document.querySelector('input[name="m-mode"]:checked');
-    if (!checked) { alert('Elige un modo.'); return; }
-    const body = { scope: mScope, mode: checked.value };
+    const mChecked = document.querySelector('input[name="m-mode"]:checked');
+    const aChecked = document.querySelector('input[name="m-ai"]:checked');
+    if (!mChecked || !aChecked) { alert('Elige modo y política de IA.'); return; }
+    let target = '';
     if (mScope !== 'global') {
-        body.target = document.getElementById('m-target').value;
-        if (!body.target) { alert('Selecciona un objetivo.'); return; }
+        target = document.getElementById('m-target').value;
+        if (!target) { alert('Selecciona un objetivo.'); return; }
     }
     try {
-        const r = await fetch('/api/dashboard/mode', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body)
-        });
-        const j = await r.json();
-        if (!r.ok) { alert(j.error || 'Error aplicando modo'); return; }
+        await postPolicy('/api/dashboard/mode', { scope: mScope, target, mode: mChecked.value });
+        await postPolicy('/api/dashboard/ai',   { scope: mScope, target, policy: aChecked.value });
     } catch (e) { alert(e.message); return; }
     closeModal('modal-mode');
     refreshModeBadge();
@@ -3625,13 +3666,10 @@ async function modeApply() {
 async function modeResetScope() {
     const target = mScope === 'global' ? '' : document.getElementById('m-target').value;
     if (mScope !== 'global' && !target) { alert('Selecciona un objetivo.'); return; }
-    if (!confirm(mScope === 'global' ? '¿Borrar el modo global?' : `¿Borrar el modo de "${target}"?`)) return;
+    if (!confirm(mScope === 'global' ? '¿Borrar modo y política de IA globales?' : `¿Borrar modo y política de IA de "${target}"?`)) return;
     try {
-        await fetch('/api/dashboard/mode', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ scope: 'reset-' + mScope, target })
-        });
+        await postPolicy('/api/dashboard/mode', { scope: 'reset-' + mScope, target });
+        await postPolicy('/api/dashboard/ai',   { scope: 'reset-' + mScope, target });
     } catch (e) { alert(e.message); return; }
     closeModal('modal-mode');
     refreshModeBadge();

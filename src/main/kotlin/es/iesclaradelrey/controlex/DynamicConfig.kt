@@ -11,11 +11,21 @@ class DynamicConfig(@Suppress("UNUSED_PARAMETER") project: Project) {
 
     /**
      * Modo de operación fijado por el panel (comando `mode-set`):
-     *  - true  (examen): se capturan y transmiten miniaturas periódicas.
-     *  - false (clase):  no se capturan miniaturas; el transmisor solo late
-     *    para seguir online y recibir comandos/config. El streaming en vivo
-     *    bajo demanda no se ve afectado.
-     * Default true → comportamiento histórico mientras el panel no diga otra cosa.
+     *  - true  (examen): se capturan y transmiten miniaturas periódicas Y se
+     *    mantiene el archivo forense local (carpeta `controlex/` del proyecto).
+     *  - false (clase):  no se capturan miniaturas (el transmisor solo late) y
+     *    NO existe la carpeta `controlex/`. El streaming en vivo bajo demanda
+     *    no se ve afectado.
+     * Default false (clase) → arranque silencioso hasta que el panel diga otra cosa.
      */
-    @Volatile var captureEnabled: Boolean = true
+    @Volatile var captureEnabled: Boolean = false
+
+    /**
+     * Política de plugins de IA, fijada por el panel (comando `ai-policy`),
+     * independiente del modo:
+     *  - true  (allow): se permiten plugins de IA.
+     *  - false (block): se fuerza su desinstalación (diálogo).
+     * Default true → permitidos mientras el panel no diga lo contrario.
+     */
+    @Volatile var aiAllowed: Boolean = true
 }

@@ -196,11 +196,36 @@ object RemoteCommandHandlers {
                     project.service<QualityConfig>().applyJson(verified)
                 }
                 "mode-set" -> {
-                    // mode = "examen" (capturas periódicas ON) | "clase" (OFF, solo
-                    // latido + streaming en vivo bajo demanda).
+                    // mode = "examen" (capturas + archivo forense ON) | "clase"
+                    // (OFF: solo latido + streaming en vivo bajo demanda; sin carpeta controlex).
                     val mode = strField("mode", verified) ?: "examen"
-                    project.service<DynamicConfig>().captureEnabled = (mode != "clase")
-                    log.info("Controlex: modo aplicado = $mode (captureEnabled=${mode != "clase"})")
+                    val examen = (mode != "clase")
+                    val dyn = project.service<DynamicConfig>()
+                    dyn.captureEnabled = examen
+                    if (examen) project.service<ScreenshotService>().onExamEnabled()
+                    else        project.service<ScreenshotService>().onClassEnabled()
+                    ApplicationManager.getApplication().invokeLater {
+                        WindowManager.getInstance().getStatusBar(project)
+                            ?.updateWidget(ControlexStatusWidget.ID)
+                    }
+                    log.info("Controlex: modo aplicado = $mode (captureEnabled=$examen)")
+                }
+                "ai-policy" -> {
+                    // policy = "allow" (permite IA) | "block" (fuerza desinstalación).
+                    val policy = strField("policy", verified) ?: "allow"
+                    val allow = (policy != "block")
+                    project.service<DynamicConfig>().aiAllowed = allow
+                    if (!allow) {
+                        val detected = AiPluginDetector.findInstalledAiPlugins()
+                        if (detected.isNotEmpty()) ApplicationManager.getApplication().invokeLater {
+                            UninstallAiPluginsDialog(project, detected).show()
+                        }
+                    }
+                    ApplicationManager.getApplication().invokeLater {
+                        WindowManager.getInstance().getStatusBar(project)
+                            ?.updateWidget(ControlexStatusWidget.ID)
+                    }
+                    log.info("Controlex: política IA aplicada = $policy (aiAllowed=$allow)")
                 }
                 else -> log.warn("Controlex: tipo de comando desconocido: $type")
             }

@@ -16,6 +16,7 @@ const { WebSocketServer, WebSocket } = require('ws');
 const CATEGORIES_PATH = path.join(os.homedir(), '.controlex-server', 'categories.json');
 const QUALITY_PATH    = path.join(os.homedir(), '.controlex-server', 'quality.json');
 const MODE_PATH       = path.join(os.homedir(), '.controlex-server', 'mode.json');
+const AI_PATH         = path.join(os.homedir(), '.controlex-server', 'ai.json');
 const HELP_PATH       = path.join(os.homedir(), '.controlex-server', 'help-requests.json');
 const MAX_HELP_REQUESTS = 500;
 const CHAT_PATH       = path.join(os.homedir(), '.controlex-server', 'chat.json');
@@ -312,7 +313,7 @@ function pushQuality(clientId) {
 // Resolución por cliente con la misma precedencia que la calidad:
 //   byClient > byCategory > global > "examen".
 const MODE_VALUES = ['examen', 'clase'];
-const DEFAULT_MODE = 'examen';
+const DEFAULT_MODE = 'clase';
 
 function sanitizeMode(v) {
     return MODE_VALUES.includes(v) ? v : null;
@@ -355,6 +356,54 @@ function pushMode(clientId) {
     return pushCommand(clientId, { type: 'mode-set', mode: effectiveMode(clientId) });
 }
 
+// ── AI plugins policy ──────────────────────────────────────────────────────────
+// "allow" → se permiten plugins de IA (default). "block" → el cliente fuerza su
+// desinstalación. Independiente del modo; misma precedencia byClient > byCategory
+// > global > "allow".
+const AI_VALUES = ['allow', 'block'];
+const DEFAULT_AI = 'allow';
+
+function sanitizeAi(v) {
+    return AI_VALUES.includes(v) ? v : null;
+}
+
+const aiState = (() => {
+    const fallback = { global: null, byCategory: {}, byClient: {} };
+    try {
+        fs.mkdirSync(path.dirname(AI_PATH), { recursive: true });
+        if (fs.existsSync(AI_PATH)) {
+            const raw = JSON.parse(fs.readFileSync(AI_PATH, 'utf8'));
+            const out = { global: sanitizeAi(raw.global), byCategory: {}, byClient: {} };
+            for (const k of Object.keys(raw.byCategory || {})) {
+                const m = sanitizeAi(raw.byCategory[k]); if (m) out.byCategory[k] = m;
+            }
+            for (const k of Object.keys(raw.byClient || {})) {
+                const m = sanitizeAi(raw.byClient[k]); if (m) out.byClient[k] = m;
+            }
+            return out;
+        }
+    } catch (e) { console.warn('[controlex] no se pudo leer ai.json:', e.message); }
+    return fallback;
+})();
+
+function persistAi() {
+    try { fs.writeFileSync(AI_PATH, JSON.stringify(aiState, null, 2)); }
+    catch (e) { console.warn('[controlex] no se pudo escribir ai.json:', e.message); }
+}
+
+function effectiveAi(clientId) {
+    const c = clients.get(clientId);
+    const cat = c?.categoryMain || null;
+    return aiState.byClient[clientId]
+        || (cat ? aiState.byCategory[cat] : null)
+        || aiState.global
+        || DEFAULT_AI;
+}
+
+function pushAi(clientId) {
+    return pushCommand(clientId, { type: 'ai-policy', policy: effectiveAi(clientId) });
+}
+
 // In-memory state
 const clients = new Map();
 const pendingCommands = new Map();
@@ -388,7 +437,8 @@ function clientView(c) {
         nickname:            c.nickname || null,
         extraCategories:     extraCategories.get(c.clientId) || [],
         mode:                effectiveMode(c.clientId),
-        capturePaused:       !!c.capturePaused
+        capturePaused:       !!c.capturePaused,
+        aiPolicy:            effectiveAi(c.clientId)
     };
 }
 
@@ -732,9 +782,15 @@ app.post('/api/screenshot', requireClientAuth, (req, res) => {
 
     broadcast(existing ? 'update' : 'add', clientView(clients.get(clientId)));
 
-    // Resync quality + modo con el cliente al registrarse o al cambiar de
-    // categoría (cambia el modo heredado). Idempotente, barato de repetir.
-    if (!existing || existing.categoryMain !== categoryMain) { pushQuality(clientId); pushMode(clientId); }
+    // Resync quality + modo + política IA al registrarse o al cambiar de
+    // categoría (cambia lo heredado). Idempotente, barato de repetir.
+    if (!existing || existing.categoryMain !== categoryMain) {
+        pushQuality(clientId); pushMode(clientId); pushAi(clientId);
+    } else if (isHeartbeat !== (effectiveMode(clientId) === 'clase')) {
+        // Autocorrección: el cliente captura cuando debería estar en pausa (o
+        // viceversa) → reenvía el modo. Cubre reinicios sin cambio de categoría.
+        pushMode(clientId);
+    }
 
     res.json({ commands });
 });
@@ -1498,6 +1554,58 @@ app.post('/api/dashboard/mode', requireApiAuth, (req, res) => {
         const c = clients.get(id); if (c) broadcast('update', clientView(c));
     }
     res.json({ ok: true, pushed, state: modeState });
+});
+
+// ── AI plugins policy (allow / block) ──────────────────────────────────────────
+app.get('/api/dashboard/ai', requireApiAuth, (req, res) => {
+    res.json({ state: aiState, default: DEFAULT_AI });
+});
+
+app.post('/api/dashboard/ai', requireApiAuth, (req, res) => {
+    const { scope, target, policy } = req.body || {};
+    const key = String(target || '').trim();
+
+    let affectedClientIds = [];
+
+    if (scope === 'global') {
+        const p = sanitizeAi(policy);
+        if (!p) return res.status(400).json({ error: 'policy inválida (allow|block)' });
+        aiState.global = p;
+        affectedClientIds = Array.from(clients.keys());
+    } else if (scope === 'category') {
+        const p = sanitizeAi(policy);
+        if (!key) return res.status(400).json({ error: 'target (categoría) obligatorio' });
+        if (!p) return res.status(400).json({ error: 'policy inválida (allow|block)' });
+        aiState.byCategory[key] = p;
+        affectedClientIds = Array.from(clients.values()).filter(c => c.categoryMain === key).map(c => c.clientId);
+    } else if (scope === 'client') {
+        const p = sanitizeAi(policy);
+        if (!key) return res.status(400).json({ error: 'target (clientId) obligatorio' });
+        if (!p) return res.status(400).json({ error: 'policy inválida (allow|block)' });
+        aiState.byClient[key] = p;
+        if (clients.has(key)) affectedClientIds = [key];
+    } else if (scope === 'reset-global') {
+        aiState.global = null;
+        affectedClientIds = Array.from(clients.keys());
+    } else if (scope === 'reset-category') {
+        if (!key) return res.status(400).json({ error: 'target (categoría) obligatorio' });
+        delete aiState.byCategory[key];
+        affectedClientIds = Array.from(clients.values()).filter(c => c.categoryMain === key).map(c => c.clientId);
+    } else if (scope === 'reset-client') {
+        if (!key) return res.status(400).json({ error: 'target (clientId) obligatorio' });
+        delete aiState.byClient[key];
+        if (clients.has(key)) affectedClientIds = [key];
+    } else {
+        return res.status(400).json({ error: 'scope inválido' });
+    }
+    persistAi();
+
+    let pushed = 0;
+    for (const id of affectedClientIds) { if (pushAi(id)) pushed++; }
+    for (const id of affectedClientIds) {
+        const c = clients.get(id); if (c) broadcast('update', clientView(c));
+    }
+    res.json({ ok: true, pushed, state: aiState });
 });
 
 app.post('/api/dashboard/categories', requireApiAuth, (req, res) => {

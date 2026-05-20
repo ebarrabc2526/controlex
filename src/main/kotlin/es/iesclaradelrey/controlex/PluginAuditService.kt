@@ -4,6 +4,7 @@ import com.intellij.ide.plugins.IdeaPluginDescriptor
 import com.intellij.ide.plugins.PluginManagerCore
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.components.Service
+import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import com.intellij.util.messages.MessageBusConnection
@@ -90,6 +91,8 @@ class PluginAuditService(private val project: Project) : Disposable {
     }
 
     private fun snapshotFile(): File? {
+        // Modo clase: no crear la carpeta forense.
+        if (!project.service<DynamicConfig>().captureEnabled) return null
         val basePath = project.basePath ?: return null
         val dir = File(basePath, ControlexConfig.DIR_NAME)
         if (!dir.exists() && !dir.mkdirs()) return null

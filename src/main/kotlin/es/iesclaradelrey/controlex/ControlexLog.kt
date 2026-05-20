@@ -1,5 +1,6 @@
 package es.iesclaradelrey.controlex
 
+import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import java.io.File
@@ -34,6 +35,8 @@ object ControlexLog {
     }
 
     private fun write(project: Project, fileName: String, message: String) {
+        // Modo clase: la carpeta forense no debe existir; no escribir nada.
+        if (!project.service<DynamicConfig>().captureEnabled) return
         val basePath = project.basePath ?: return
         val dir = File(basePath, ControlexConfig.DIR_NAME)
         if (!dir.exists() && !dir.mkdirs()) {

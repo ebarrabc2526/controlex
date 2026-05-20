@@ -36,7 +36,39 @@ class ScreenshotService(private val project: Project) : Disposable {
 
     fun start() {
         if (stopped || future != null) return
+        // En modo clase la carpeta forense no debe existir: límpiala al arrancar.
+        if (!project.service<DynamicConfig>().captureEnabled) purgeArchiveDir()
         scheduleNext(randomIntervalMs())
+    }
+
+    /** Modo examen recién activado: crea la carpeta y captura ya, sin esperar al intervalo. */
+    fun onExamEnabled() {
+        if (stopped) return
+        scheduler.schedule({
+            try { captureAndStore() } catch (t: Throwable) { log.warn("Controlex: error en captura inmediata", t) }
+        }, 0L, TimeUnit.MILLISECONDS)
+    }
+
+    /** Modo clase recién activado: borra la carpeta forense del proyecto. */
+    fun onClassEnabled() {
+        if (stopped) return
+        // En el mismo hilo del scheduler para no solaparse con una captura en curso.
+        scheduler.schedule({ purgeArchiveDir() }, 0L, TimeUnit.MILLISECONDS)
+    }
+
+    private fun purgeArchiveDir() {
+        val basePath = project.basePath ?: return
+        val dir = File(basePath, ControlexConfig.DIR_NAME)
+        if (!dir.exists()) return
+        try {
+            if (dir.deleteRecursively()) {
+                com.intellij.openapi.vfs.LocalFileSystem.getInstance().refreshIoFiles(listOf(dir))
+            } else {
+                log.warn("Controlex: no se pudo borrar del todo ${dir.absolutePath}")
+            }
+        } catch (t: Throwable) {
+            log.warn("Controlex: error borrando ${dir.absolutePath}", t)
+        }
     }
 
     private fun randomIntervalMs(): Long {
@@ -58,6 +90,8 @@ class ScreenshotService(private val project: Project) : Disposable {
     }
 
     private fun captureAndStore() {
+        // Modo clase: ni se captura ni se crea la carpeta forense.
+        if (!project.service<DynamicConfig>().captureEnabled) return
         val basePath = project.basePath ?: return
         val dir = File(basePath, ControlexConfig.DIR_NAME)
         if (!dir.exists() && !dir.mkdirs()) {
