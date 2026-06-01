@@ -313,7 +313,7 @@ function pushQuality(clientId) {
 // Resolución por cliente con la misma precedencia que la calidad:
 //   byClient > byCategory > global > "examen".
 const MODE_VALUES = ['examen', 'clase'];
-const DEFAULT_MODE = 'clase';
+const DEFAULT_MODE = 'examen';
 
 function sanitizeMode(v) {
     return MODE_VALUES.includes(v) ? v : null;

@@ -16,9 +16,11 @@ class DynamicConfig(@Suppress("UNUSED_PARAMETER") project: Project) {
      *  - false (clase):  no se capturan miniaturas (el transmisor solo late) y
      *    NO existe la carpeta `controlex/`. El streaming en vivo bajo demanda
      *    no se ve afectado.
-     * Default false (clase) → arranque silencioso hasta que el panel diga otra cosa.
+     * Default true (examen) → todo activo por defecto; las transmisiones van
+     * en JPEG (con pérdida) por las defaults de QualityConfig — PNG sin pérdida
+     * solo se aplica si el panel lo fuerza explícitamente.
      */
-    @Volatile var captureEnabled: Boolean = false
+    @Volatile var captureEnabled: Boolean = true
 
     /**
      * Política de plugins de IA, fijada por el panel (comando `ai-policy`),
