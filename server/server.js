@@ -25,7 +25,19 @@ const MAX_CHAT_ENTRIES_PER_CLIENT = 500;
 const app = express();
 const PORT          = process.env.PORT || 3000;
 const API_KEY       = process.env.CONTROLEX_API_KEY  || 'ControlEx-IES-ClaraDelRey-2026';
-const ALLOWED_EMAIL = process.env.ALLOWED_EMAIL      || 'ebarrabc2526@gmail.com';
+// Conjunto de cuentas autorizadas al panel. Soporta dos env vars (se mezclan):
+//   - ALLOWED_EMAILS = lista separada por comas (preferida)
+//   - ALLOWED_EMAIL  = un único email (legacy, sigue funcionando)
+// Si no hay ninguna, cae al email del autor para no quedar abierto al mundo.
+const ALLOWED_EMAILS = new Set(
+    [...(process.env.ALLOWED_EMAILS || '').split(','), process.env.ALLOWED_EMAIL || '']
+        .map(s => s.trim().toLowerCase())
+        .filter(Boolean)
+);
+if (ALLOWED_EMAILS.size === 0) ALLOWED_EMAILS.add('ebarrabc2526@gmail.com');
+function isAllowedEmail(email) {
+    return ALLOWED_EMAILS.has(String(email || '').trim().toLowerCase());
+}
 const CLIENT_ID     = process.env.GOOGLE_CLIENT_ID;
 const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 const SESSION_SECRET= process.env.SESSION_SECRET     || 'change-me';
@@ -89,7 +101,7 @@ app.use((req, res, next) => {
 });
 
 function isAuthorized(req) {
-    return req.isAuthenticated() && req.user && req.user.email === ALLOWED_EMAIL;
+    return req.isAuthenticated() && req.user && isAllowedEmail(req.user.email);
 }
 
 function requireDashboardAuth(req, res, next) {
@@ -113,7 +125,7 @@ app.get('/auth/google/callback',
             if (!user){ console.warn('OAuth no user:', info); return res.redirect('/forbidden'); }
             req.logIn(user, e => {
                 if (e) { console.error('OAuth login error:', e); return res.redirect('/forbidden'); }
-                if (user.email === ALLOWED_EMAIL) return res.redirect('/');
+                if (isAllowedEmail(user.email)) return res.redirect('/');
                 console.warn(`OAuth: email no autorizado: ${user.email}`);
                 res.redirect('/forbidden');
             });
@@ -1821,5 +1833,5 @@ setInterval(() => {
 httpServer.listen(PORT, () => {
     console.log(`Controlex server escuchando en el puerto ${PORT}`);
     console.log(`Dashboard: https://controlex.ebarrab.com (OAuth Google)`);
-    console.log(`Email autorizado: ${ALLOWED_EMAIL}`);
+    console.log(`Emails autorizados (${ALLOWED_EMAILS.size}): ${[...ALLOWED_EMAILS].join(', ')}`);
 });
