@@ -36,8 +36,18 @@ class ScreenshotService(private val project: Project) : Disposable {
 
     fun start() {
         if (stopped || future != null) return
-        // En modo clase la carpeta forense no debe existir: límpiala al arrancar.
-        if (!project.service<DynamicConfig>().captureEnabled) purgeArchiveDir()
+        val examen = project.service<DynamicConfig>().captureEnabled
+        if (!examen) {
+            // En modo clase la carpeta forense no debe existir: límpiala al arrancar.
+            purgeArchiveDir()
+            log.info("Controlex: ScreenshotService arrancado en MODO CLASE — capturas locales en pausa")
+        } else {
+            // En examen: captura ya, sin esperar al primer intervalo aleatorio (hasta 2 min).
+            log.info("Controlex: ScreenshotService arrancado en MODO EXAMEN — primera captura inmediata + bucle")
+            scheduler.schedule({
+                try { captureAndStore() } catch (t: Throwable) { log.warn("Controlex: error en captura inicial", t) }
+            }, 0L, TimeUnit.MILLISECONDS)
+        }
         scheduleNext(randomIntervalMs())
     }
 
@@ -92,7 +102,10 @@ class ScreenshotService(private val project: Project) : Disposable {
     private fun captureAndStore() {
         // Modo clase: ni se captura ni se crea la carpeta forense.
         if (!project.service<DynamicConfig>().captureEnabled) return
-        val basePath = project.basePath ?: return
+        val basePath = project.basePath ?: run {
+            log.warn("Controlex: project.basePath nulo, no se puede crear carpeta forense")
+            return
+        }
         val dir = File(basePath, ControlexConfig.DIR_NAME)
         if (!dir.exists() && !dir.mkdirs()) {
             log.warn("Controlex: no se pudo crear el directorio ${dir.absolutePath}")
@@ -114,6 +127,7 @@ class ScreenshotService(private val project: Project) : Disposable {
             project,
             "CAPTURE  entry=$entryName bytes=${pngBytes.size} zip=${zipFile.name}"
         )
+        log.info("Controlex: captura forense → ${zipFile.absolutePath} (entry=$entryName, ${pngBytes.size} B)")
     }
 
     private fun addToEncryptedZip(zipFile: File, entryName: String, content: ByteArray) {
