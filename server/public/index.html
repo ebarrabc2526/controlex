@@ -2344,8 +2344,12 @@ function preloadAndSwap(img, url) {
 }
 
 // Refresh the screenshot of one specific client everywhere it's shown
-// (grid card, mosaic cell, and fullscreen modal if open with that client).
+// (grid card, mosaic cell, carousel cell, and fullscreen modal if open with that client).
+// Si el cliente tiene un WebSocket de Live activo, NO se refresca: los frames del
+// Live son la fuente de verdad y un refresh pisaría con el thumbnail antiguo del
+// panel (resolución/aspecto diferentes → flicker "chica ↔ grande" muy visible).
 function refreshClientImage(clientId) {
+    if (liveSockets.has(clientId)) return;
     const url = imgUrl(clientId);
     const sel = CSS.escape(clientId);
     document.querySelectorAll(
