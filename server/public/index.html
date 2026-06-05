@@ -3918,54 +3918,97 @@ let timerFinished  = false;
 let timerInterval  = null;
 let timerSound     = 'beep';   // 'beep' | 'siren' | 'ring' | 'bell' | 'gong'
 
+// Posición y tamaño RELATIVOS al viewport (en porcentaje). Source of truth.
+// timerApplyLayout() los convierte a px del viewport actual. timerSyncStateFromDom
+// los recalcula desde el px tras una interacción de drag/resize. window.resize
+// re-aplica el layout para que el widget escale proporcional al viewport.
+let timerLayout = { leftPct: null, topPct: null, widthPct: null, heightPct: null };
+
 function timerLoad() {
     try {
         const raw = localStorage.getItem(TIMER_LS_KEY);
-        if (!raw) return;
-        const s = JSON.parse(raw);
-        if (typeof s.totalMs === 'number')   timerTotalMs  = Math.max(1000, s.totalMs);
-        if (typeof s.remainMs === 'number')  timerRemainMs = Math.max(0, s.remainMs);
-        // Reanudar el estado "iniciado" si lo estaba al cerrar. Importante:
-        // recalculamos endAt desde el valor CONGELADO (remainMs guardado en
-        // beforeunload), no del endAt absoluto antiguo — así el tiempo que la
-        // pestaña estuvo cerrada no descuenta.
-        if (s.running && timerRemainMs > 0) {
-            timerEndAt = Date.now() + timerRemainMs;
+        if (raw) {
+            const s = JSON.parse(raw);
+            if (typeof s.totalMs  === 'number') timerTotalMs  = Math.max(1000, s.totalMs);
+            if (typeof s.remainMs === 'number') timerRemainMs = Math.max(0,    s.remainMs);
+            // Reanudar el estado "iniciado" si lo estaba al cerrar. Importante:
+            // recalculamos endAt desde el valor CONGELADO (remainMs guardado en
+            // beforeunload), no del endAt absoluto antiguo — así el tiempo que la
+            // pestaña estuvo cerrada no descuenta.
+            if (s.running && timerRemainMs > 0) timerEndAt = Date.now() + timerRemainMs;
+            const el = document.getElementById('timer-widget');
+            if (s.minimal) el.classList.add('is-minimal');
+            if (typeof s.sound === 'string') timerSound = s.sound;
+            if (s.visible) el.classList.remove('is-hidden');
+            // Layout: preferimos porcentajes. Migración: convertimos formato viejo
+            // (left/top/width/height en px) a % del viewport actual.
+            const W = window.innerWidth, H = window.innerHeight;
+            if (typeof s.leftPct   === 'number') timerLayout.leftPct   = s.leftPct;
+            else if (typeof s.left   === 'number' && W > 0) timerLayout.leftPct   = s.left   / W * 100;
+            if (typeof s.topPct    === 'number') timerLayout.topPct    = s.topPct;
+            else if (typeof s.top    === 'number' && H > 0) timerLayout.topPct    = s.top    / H * 100;
+            if (typeof s.widthPct  === 'number') timerLayout.widthPct  = s.widthPct;
+            else if (typeof s.width  === 'number' && W > 0) timerLayout.widthPct  = s.width  / W * 100;
+            if (typeof s.heightPct === 'number') timerLayout.heightPct = s.heightPct;
+            else if (typeof s.height === 'number' && H > 0) timerLayout.heightPct = s.height / H * 100;
         }
-        const el = document.getElementById('timer-widget');
-        if (typeof s.left === 'number' && typeof s.top === 'number') {
-            el.style.left = s.left + 'px';
-            el.style.top  = s.top + 'px';
-            el.style.right = 'auto';
-        }
-        // Tamaño persistido. ResizeObserver recalcula font-size en cuanto se muestre.
-        if (typeof s.width  === 'number' && s.width  > 0) el.style.width  = s.width  + 'px';
-        if (typeof s.height === 'number' && s.height > 0) el.style.height = s.height + 'px';
-        if (s.minimal) el.classList.add('is-minimal');
-        if (typeof s.sound === 'string') timerSound = s.sound;
-        if (s.visible) el.classList.remove('is-hidden');
     } catch (_) {}
+    // Defaults para primer uso: ~22% × ~28% en la esquina superior derecha.
+    if (timerLayout.widthPct  == null) timerLayout.widthPct  = 22;
+    if (timerLayout.heightPct == null) timerLayout.heightPct = 28;
+    if (timerLayout.topPct    == null) timerLayout.topPct    = 5;
+    if (timerLayout.leftPct   == null) timerLayout.leftPct   = 100 - timerLayout.widthPct - 1;
+    timerApplyLayout();
 }
+
 function timerSave() {
     try {
         const el = document.getElementById('timer-widget');
-        const rect = el.getBoundingClientRect();
-        const moved   = el.style.left  !== '';
-        const resized = el.style.width !== '' || el.style.height !== '';
         localStorage.setItem(TIMER_LS_KEY, JSON.stringify({
             totalMs: timerTotalMs,
             remainMs: timerRemainMs,
             running: timerEndAt !== null,
-            endAt: timerEndAt,
+            endAt:   timerEndAt,
             visible: !el.classList.contains('is-hidden'),
             minimal: el.classList.contains('is-minimal'),
-            sound: timerSound,
-            left:   moved   ? rect.left   : undefined,
-            top:    moved   ? rect.top    : undefined,
-            width:  resized ? rect.width  : undefined,
-            height: resized ? rect.height : undefined
+            sound:   timerSound,
+            leftPct:   timerLayout.leftPct,
+            topPct:    timerLayout.topPct,
+            widthPct:  timerLayout.widthPct,
+            heightPct: timerLayout.heightPct
         }));
     } catch (_) {}
+}
+
+// Convierte timerLayout (% del viewport) a px y los aplica al widget. Llamado
+// también por window.resize para que el widget acompañe al viewport.
+function timerApplyLayout() {
+    const el = document.getElementById('timer-widget');
+    const W = window.innerWidth, H = window.innerHeight;
+    if (timerLayout.widthPct  != null) el.style.width  = (timerLayout.widthPct  * W / 100) + 'px';
+    if (timerLayout.heightPct != null) el.style.height = (timerLayout.heightPct * H / 100) + 'px';
+    // Tras aplicar tamaño (limitado por min-width/min-height de CSS), clampar
+    // posición para no salir del viewport en pantallas pequeñas.
+    const r = el.getBoundingClientRect();
+    if (timerLayout.leftPct != null) {
+        const px = Math.max(0, Math.min(W - r.width, timerLayout.leftPct * W / 100));
+        el.style.left = px + 'px'; el.style.right = 'auto';
+    }
+    if (timerLayout.topPct != null) {
+        const py = Math.max(0, Math.min(H - r.height, timerLayout.topPct * H / 100));
+        el.style.top = py + 'px';
+    }
+}
+
+// Tras una interacción de usuario (drag o resize por handle), recalcula los
+// porcentajes desde los px actuales para que la próxima window.resize escale
+// desde el nuevo "anclaje".
+function timerSyncLayoutFromDom() {
+    const el = document.getElementById('timer-widget');
+    const r = el.getBoundingClientRect();
+    const W = window.innerWidth, H = window.innerHeight;
+    if (W > 0) { timerLayout.leftPct = r.left / W * 100; timerLayout.widthPct  = r.width  / W * 100; }
+    if (H > 0) { timerLayout.topPct  = r.top  / H * 100; timerLayout.heightPct = r.height / H * 100; }
 }
 
 function timerShow() {
@@ -4186,12 +4229,12 @@ function timerInitResize() {
         const fs = Math.max(8, Math.min(160, scale * 16));
         w.style.fontSize = fs + 'px';
     };
-    let saveTimer = null;
+    // El ResizeObserver SOLO reescala la fuente — no guarda. El guardado lo
+    // disparan las acciones explícitas (drag/resize-handle al soltar, toggles,
+    // set de tiempo, sonido…). Así window.resize no escribe el localStorage en
+    // bucle ni provoca derivas por redondeo de porcentajes.
     const ro = new ResizeObserver(entries => {
         for (const e of entries) timerApplyScale(e.contentRect.width, e.contentRect.height);
-        // Debounce save para no escribir localStorage en cada pixel del arrastre.
-        clearTimeout(saveTimer);
-        saveTimer = setTimeout(timerSave, 250);
     });
     ro.observe(w);
 
@@ -4254,6 +4297,7 @@ function timerWireResizeHandle(handle, widget, sides) {
         function onUp() {
             document.removeEventListener('mousemove', onMove);
             document.removeEventListener('mouseup', onUp);
+            timerSyncLayoutFromDom();   // px → % para que sobreviva a window.resize
             timerSave();
         }
         document.addEventListener('mousemove', onMove);
@@ -4299,7 +4343,13 @@ function timerInitDrag() {
         const ny = Math.max(0, Math.min(window.innerHeight - 60,  startTop  + (e.clientY - startY)));
         w.style.left = nx + 'px'; w.style.top = ny + 'px'; w.style.right = 'auto';
     });
-    document.addEventListener('mouseup', () => { if (dragging) { dragging = false; timerSave(); } });
+    document.addEventListener('mouseup', () => {
+        if (dragging) {
+            dragging = false;
+            timerSyncLayoutFromDom();   // px → % para que sobreviva a window.resize
+            timerSave();
+        }
+    });
 }
 
 // Toggle modo minimalista (solo dígitos) ↔ completo. Persistido en localStorage.
@@ -4331,6 +4381,12 @@ document.addEventListener('DOMContentLoaded', () => {
     timerInitDrag();
     timerInitResize();
     timerApplyScaleNow();   // primera escala síncrona si el widget se carga visible
+    // Al redimensionar la ventana del navegador, re-aplicamos el layout en %
+    // sobre las nuevas dimensiones del viewport. El widget escala proporcional.
+    window.addEventListener('resize', () => {
+        timerApplyLayout();
+        timerApplyScaleNow();
+    });
 });
 
 // Congelar el valor actual al cerrar/recargar y conservar el estado iniciado/pausado.
