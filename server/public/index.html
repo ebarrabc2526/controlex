@@ -948,35 +948,50 @@ body {
   .card-hide-btn { opacity: .85; }
 }
 
-/* ── Countdown timer widget (R toggles, draggable, persists on reload) ─────── */
+/* ── Countdown timer widget (R toggles, draggable, resizable, persists) ───── */
+/* Todo en em → al cambiar el font-size del widget, escala todo proporcional.
+   El font-size lo recalcula JS (ResizeObserver) en función del tamaño actual
+   del widget (mín de width/baseW y height/baseH para que nada se desborde). */
 .timer-widget {
   position: fixed; top: 70px; right: 20px; z-index: 999;
   background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-  color: #fff; border-radius: 14px;
-  box-shadow: 0 8px 32px rgba(0,0,0,.40), 0 0 0 1px rgba(255,255,255,.08);
-  padding: 12px 18px 14px; min-width: 320px;
+  color: #fff; border-radius: 0.875em;
+  box-shadow: 0 0.5em 2em rgba(0,0,0,.40), 0 0 0 1px rgba(255,255,255,.08);
+  padding: 0.75em 1.125em 0.875em;
+  min-width: 220px; min-height: 200px;
   user-select: none;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 16px;  /* base; JS lo recalcula con ResizeObserver */
+  resize: both; overflow: hidden;
+  /* Pista visual del handle de redimensionar en la esquina inferior-derecha
+     (encima del control nativo del navegador, que con fondo oscuro suele costar
+     verse). El control real lo da `resize: both`, esto solo es decorativo. */
+  background-image:
+    linear-gradient(135deg, transparent 60%, rgba(255,213,79,.35) 60%, rgba(255,213,79,.35) 65%, transparent 65%, transparent 75%, rgba(255,213,79,.35) 75%, rgba(255,213,79,.35) 80%, transparent 80%),
+    linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  background-position: bottom right, center;
+  background-size: 14px 14px, 100% 100%;
+  background-repeat: no-repeat, no-repeat;
 }
 .timer-widget.is-hidden { display: none; }
 .tw-head {
   display: flex; align-items: center; justify-content: space-between;
-  margin-bottom: 6px; cursor: move;
+  margin-bottom: 0.375em; cursor: move;
 }
-.tw-title { font-size: .72rem; letter-spacing: 2px; font-weight: 700; opacity: .85; }
+.tw-title { font-size: 0.72em; letter-spacing: 0.125em; font-weight: 700; opacity: .85; }
 .tw-close {
   background: transparent; border: 0; color: #fff; cursor: pointer;
-  font-size: 1rem; opacity: .7; padding: 0 4px;
+  font-size: 1em; opacity: .7; padding: 0 0.25em;
 }
 .tw-close:hover { opacity: 1; }
 .tw-digits {
   font-family: 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
-  font-size: 5rem; line-height: 1; font-weight: 800;
-  text-align: center; letter-spacing: -2px; margin: 4px 0 0;
+  font-size: 5em; line-height: 1; font-weight: 800;
+  text-align: center; letter-spacing: -0.04em; margin: 0.25em 0 0;
   background: linear-gradient(135deg, #FFD54F 0%, #FF9800 50%, #F44336 100%);
   -webkit-background-clip: text; background-clip: text;
   -webkit-text-fill-color: transparent; color: transparent;
-  text-shadow: 0 0 30px rgba(255,152,0,.25);
+  text-shadow: 0 0 0.6em rgba(255,152,0,.25);
 }
 .timer-widget.is-running .tw-digits {
   background: linear-gradient(135deg, #A5D6A7 0%, #66BB6A 50%, #2E7D32 100%);
@@ -990,15 +1005,15 @@ body {
 @keyframes timerFlash { 0%,100% { opacity: 1 } 50% { opacity: .35 } }
 .tw-seconds {
   text-align: center; font-family: 'SF Mono', Menlo, Consolas, monospace;
-  font-size: 1.1rem; opacity: .78; font-weight: 600;
-  margin: 2px 0 12px; letter-spacing: 1px;
+  font-size: 1.1em; opacity: .78; font-weight: 600;
+  margin: 0.125em 0 0.75em; letter-spacing: 0.0625em;
 }
-.tw-controls { display: flex; gap: 6px; margin-bottom: 12px; justify-content: center; }
+.tw-controls { display: flex; gap: 0.375em; margin-bottom: 0.75em; justify-content: center; flex-wrap: wrap; }
 .tw-btn {
   background: rgba(255,255,255,.10);
   border: 1px solid rgba(255,255,255,.20); color: #fff;
-  padding: 6px 14px; border-radius: 8px;
-  font-size: .82rem; font-weight: 600; cursor: pointer;
+  padding: 0.375em 0.875em; border-radius: 0.5em;
+  font-size: 0.82em; font-weight: 600; cursor: pointer;
   transition: background .15s, transform .05s;
 }
 .tw-btn:hover { background: rgba(255,255,255,.20); }
@@ -1007,29 +1022,29 @@ body {
 .tw-btn.primary:hover { background: #4CAF50; }
 .tw-btn.warn { background: #FF9800; border-color: #FF9800; }
 .tw-btn.warn:hover { background: #F57C00; }
-.tw-presets { display: flex; gap: 6px; margin-bottom: 10px; justify-content: center; flex-wrap: wrap; }
+.tw-presets { display: flex; gap: 0.375em; margin-bottom: 0.625em; justify-content: center; flex-wrap: wrap; }
 .tw-preset {
   background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.18);
-  color: #fff; padding: 5px 10px; border-radius: 6px;
-  font-size: .78rem; cursor: pointer; transition: background .15s;
+  color: #fff; padding: 0.3125em 0.625em; border-radius: 0.375em;
+  font-size: 0.78em; cursor: pointer; transition: background .15s;
 }
 .tw-preset:hover { background: rgba(255,213,79,.25); border-color: rgba(255,213,79,.45); }
 .tw-custom {
-  display: flex; gap: 6px; align-items: center; justify-content: center;
-  font-size: .8rem;
+  display: flex; gap: 0.375em; align-items: center; justify-content: center;
+  font-size: 0.8em; flex-wrap: wrap;
 }
 .tw-custom input {
-  width: 44px;
+  width: 2.75em;
   background: rgba(255,255,255,.08); color: #fff;
-  border: 1px solid rgba(255,255,255,.20); border-radius: 6px;
-  padding: 4px 6px; font-family: monospace; font-size: .92rem; text-align: center;
+  border: 1px solid rgba(255,255,255,.20); border-radius: 0.375em;
+  padding: 0.25em 0.375em; font-family: monospace; font-size: 1.15em; text-align: center;
 }
 .tw-custom input:focus { outline: none; border-color: #FFD54F; }
 .tw-custom input::-webkit-outer-spin-button,
 .tw-custom input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .tw-hint {
-  font-size: .65rem; opacity: .55; text-align: center; margin-top: 8px;
-  letter-spacing: .5px;
+  font-size: 0.65em; opacity: .55; text-align: center; margin-top: 0.5em;
+  letter-spacing: 0.03em;
 }
 </style>
 </head>
@@ -3858,33 +3873,43 @@ function timerLoad() {
         if (typeof s.totalMs === 'number')   timerTotalMs  = Math.max(1000, s.totalMs);
         if (typeof s.remainMs === 'number')  timerRemainMs = Math.max(0, s.remainMs);
         if (s.running && typeof s.endAt === 'number') timerEndAt = s.endAt;
+        const el = document.getElementById('timer-widget');
         if (typeof s.left === 'number' && typeof s.top === 'number') {
-            const el = document.getElementById('timer-widget');
             el.style.left = s.left + 'px';
             el.style.top  = s.top + 'px';
             el.style.right = 'auto';
         }
-        if (s.visible) document.getElementById('timer-widget').classList.remove('is-hidden');
+        // Tamaño persistido (resize:both). ResizeObserver recalcula font-size en cuanto se muestre.
+        if (typeof s.width  === 'number' && s.width  > 0) el.style.width  = s.width  + 'px';
+        if (typeof s.height === 'number' && s.height > 0) el.style.height = s.height + 'px';
+        if (s.visible) el.classList.remove('is-hidden');
     } catch (_) {}
 }
 function timerSave() {
     try {
         const el = document.getElementById('timer-widget');
         const rect = el.getBoundingClientRect();
-        const moved = el.style.left !== '';
+        const moved   = el.style.left  !== '';
+        const resized = el.style.width !== '' || el.style.height !== '';
         localStorage.setItem(TIMER_LS_KEY, JSON.stringify({
             totalMs: timerTotalMs,
             remainMs: timerRemainMs,
             running: timerEndAt !== null,
             endAt: timerEndAt,
             visible: !el.classList.contains('is-hidden'),
-            left: moved ? rect.left : undefined,
-            top:  moved ? rect.top  : undefined
+            left:   moved   ? rect.left   : undefined,
+            top:    moved   ? rect.top    : undefined,
+            width:  resized ? rect.width  : undefined,
+            height: resized ? rect.height : undefined
         }));
     } catch (_) {}
 }
 
-function timerShow() { document.getElementById('timer-widget').classList.remove('is-hidden'); timerSave(); timerRender(); }
+function timerShow() {
+    document.getElementById('timer-widget').classList.remove('is-hidden');
+    timerApplyScaleNow();   // recalcular font-size del tamaño actual (el observer solo dispara cuando cambia)
+    timerSave(); timerRender();
+}
 function timerHide() { document.getElementById('timer-widget').classList.add('is-hidden');    timerSave(); }
 function timerToggle() {
     const el = document.getElementById('timer-widget');
@@ -3983,6 +4008,38 @@ function timerBeep() {
     } catch (_) {}
 }
 
+// Redimensionar el widget (resize: both) → escala automática del font-size para
+// que todos los elementos (dígitos, segundos, botones…) crezcan/encojan
+// proporcionalmente. La escala usa el mín(width/baseW, height/baseH) para que
+// nunca se desborde el contenido aunque achiques una dimensión.
+let timerApplyScale = null;
+function timerInitResize() {
+    const w = document.getElementById('timer-widget');
+    const baseW = 340, baseH = 300;
+    timerApplyScale = (width, height) => {
+        if (!(width > 0) || !(height > 0)) return;
+        const scale = Math.min(width / baseW, height / baseH);
+        const fs = Math.max(8, Math.min(96, scale * 16));
+        w.style.fontSize = fs + 'px';
+    };
+    let saveTimer = null;
+    const ro = new ResizeObserver(entries => {
+        for (const e of entries) timerApplyScale(e.contentRect.width, e.contentRect.height);
+        // Debounce save para no escribir localStorage en cada pixel del arrastre.
+        clearTimeout(saveTimer);
+        saveTimer = setTimeout(timerSave, 250);
+    });
+    ro.observe(w);
+}
+
+// Recalcula font-size al mostrar (si ya estaba pintado oculto, getBoundingClientRect
+// devolvía 0×0 y el ResizeObserver no había podido calcularlo todavía).
+function timerApplyScaleNow() {
+    const el = document.getElementById('timer-widget');
+    const r = el.getBoundingClientRect();
+    if (timerApplyScale) timerApplyScale(r.width, r.height);
+}
+
 // Arrastrar la ventana por la cabecera. Posición persistida.
 function timerInitDrag() {
     const head = document.getElementById('tw-head');
@@ -4020,6 +4077,20 @@ document.addEventListener('DOMContentLoaded', () => {
     timerRender();
     timerInterval = setInterval(timerRender, 250);
     timerInitDrag();
+    timerInitResize();
+    timerApplyScaleNow();   // primera escala síncrona si el widget se carga visible
+});
+
+// Congelar el valor actual al cerrar/recargar. Si el temporizador está corriendo,
+// se pasa a "pausado" con el tiempo restante en el momento exacto del unload.
+// Así, al volver, se ve EXACTAMENTE el mismo tiempo que tenía al cerrar — no
+// sigue corriendo en background mientras la pestaña está cerrada.
+window.addEventListener('beforeunload', () => {
+    if (timerEndAt !== null) {
+        timerRemainMs = Math.max(0, timerEndAt - Date.now());
+        timerEndAt = null;
+    }
+    timerSave();
 });
 
 // Toggle global con R. Ignorar si el foco está en input/textarea o si hay
