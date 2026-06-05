@@ -3888,7 +3888,13 @@ function timerLoad() {
         const s = JSON.parse(raw);
         if (typeof s.totalMs === 'number')   timerTotalMs  = Math.max(1000, s.totalMs);
         if (typeof s.remainMs === 'number')  timerRemainMs = Math.max(0, s.remainMs);
-        if (s.running && typeof s.endAt === 'number') timerEndAt = s.endAt;
+        // Reanudar el estado "iniciado" si lo estaba al cerrar. Importante:
+        // recalculamos endAt desde el valor CONGELADO (remainMs guardado en
+        // beforeunload), no del endAt absoluto antiguo — así el tiempo que la
+        // pestaña estuvo cerrada no descuenta.
+        if (s.running && timerRemainMs > 0) {
+            timerEndAt = Date.now() + timerRemainMs;
+        }
         const el = document.getElementById('timer-widget');
         if (typeof s.left === 'number' && typeof s.top === 'number') {
             el.style.left = s.left + 'px';
@@ -4162,14 +4168,17 @@ document.addEventListener('DOMContentLoaded', () => {
     timerApplyScaleNow();   // primera escala síncrona si el widget se carga visible
 });
 
-// Congelar el valor actual al cerrar/recargar. Si el temporizador está corriendo,
-// se pasa a "pausado" con el tiempo restante en el momento exacto del unload.
-// Así, al volver, se ve EXACTAMENTE el mismo tiempo que tenía al cerrar — no
-// sigue corriendo en background mientras la pestaña está cerrada.
+// Congelar el valor actual al cerrar/recargar y conservar el estado iniciado/pausado.
+// - Si estaba corriendo: snapshotamos remainMs al valor actual y mantenemos
+//   running=true (timerEndAt sigue !== null para que timerSave guarde running:true).
+//   Al recargar, timerLoad reanuda desde remainMs (no cuenta el tiempo cerrado).
+// - Si estaba en pausa: simplemente guardamos el estado pausado intacto.
+// - Si el contador ya había llegado a 0 sin marcarse aún como finalizado: se
+//   guarda como no-corriendo a 0 para no reanudar un timer agotado.
 window.addEventListener('beforeunload', () => {
     if (timerEndAt !== null) {
         timerRemainMs = Math.max(0, timerEndAt - Date.now());
-        timerEndAt = null;
+        if (timerRemainMs === 0) timerEndAt = null;   // ya terminó: no reanudar
     }
     timerSave();
 });
