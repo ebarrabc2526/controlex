@@ -984,7 +984,20 @@ body {
 .tw-rh-tr::before { top: 3px; right: 3px; border-left: 0;  border-bottom: 0; }
 .tw-rh-bl::before { bottom: 3px; left: 3px;  border-right: 0; border-top: 0; }
 .tw-rh-br::before { bottom: 3px; right: 3px; border-left: 0;  border-top: 0; }
-.timer-widget.is-hidden { display: none; }
+.timer-widget.is-hidden { display: none !important; }   /* gana siempre sobre is-minimal */
+/* Modo minimalista (toggle con M): solo dígitos. La ventana entera es la
+   agarradera de arrastre porque la cabecera está oculta. */
+.timer-widget.is-minimal {
+  display: flex; align-items: center; justify-content: center;
+  padding: 0.375em; cursor: move;
+}
+.timer-widget.is-minimal .tw-head,
+.timer-widget.is-minimal .tw-seconds,
+.timer-widget.is-minimal .tw-controls,
+.timer-widget.is-minimal .tw-presets,
+.timer-widget.is-minimal .tw-custom,
+.timer-widget.is-minimal .tw-hint { display: none; }
+.timer-widget.is-minimal .tw-digits { margin: 0; line-height: 1; }
 .tw-head {
   display: flex; align-items: center; justify-content: space-between;
   margin-bottom: 0.375em; cursor: move;
@@ -1202,7 +1215,7 @@ body {
     <input type="number" id="tw-m" min="0" max="59" value="0" onchange="timerApplyCustom()" title="Minutos">
     <button class="tw-btn" onclick="timerApplyCustom()">Set</button>
   </div>
-  <div class="tw-hint">Pulsa R para mostrar/ocultar · arrastra la cabecera para mover · esquinas para redimensionar</div>
+  <div class="tw-hint">R: mostrar/ocultar · M: modo mini/completo · arrastra la cabecera · esquinas para redimensionar</div>
   <!-- Handles de resize en las 4 esquinas (gestión propia en JS, no `resize: both`). -->
   <div class="tw-rh tw-rh-tl"></div>
   <div class="tw-rh tw-rh-tr"></div>
@@ -3901,9 +3914,10 @@ function timerLoad() {
             el.style.top  = s.top + 'px';
             el.style.right = 'auto';
         }
-        // Tamaño persistido (resize:both). ResizeObserver recalcula font-size en cuanto se muestre.
+        // Tamaño persistido. ResizeObserver recalcula font-size en cuanto se muestre.
         if (typeof s.width  === 'number' && s.width  > 0) el.style.width  = s.width  + 'px';
         if (typeof s.height === 'number' && s.height > 0) el.style.height = s.height + 'px';
+        if (s.minimal) el.classList.add('is-minimal');
         if (s.visible) el.classList.remove('is-hidden');
     } catch (_) {}
 }
@@ -3919,6 +3933,7 @@ function timerSave() {
             running: timerEndAt !== null,
             endAt: timerEndAt,
             visible: !el.classList.contains('is-hidden'),
+            minimal: el.classList.contains('is-minimal'),
             left:   moved   ? rect.left   : undefined,
             top:    moved   ? rect.top    : undefined,
             width:  resized ? rect.width  : undefined,
@@ -4037,11 +4052,15 @@ function timerBeep() {
 let timerApplyScale = null;
 function timerInitResize() {
     const w = document.getElementById('timer-widget');
-    const baseW = 340, baseH = 300;
     timerApplyScale = (width, height) => {
         if (!(width > 0) || !(height > 0)) return;
+        // En minimalista (solo dígitos) usamos un baseW/baseH más pequeño
+        // para que los dígitos aprovechen mejor el espacio del widget.
+        const minimal = w.classList.contains('is-minimal');
+        const baseW = minimal ? 220 : 340;
+        const baseH = minimal ? 110 : 300;
         const scale = Math.min(width / baseW, height / baseH);
-        const fs = Math.max(8, Math.min(96, scale * 16));
+        const fs = Math.max(8, Math.min(160, scale * 16));
         w.style.fontSize = fs + 'px';
     };
     let saveTimer = null;
@@ -4127,18 +4146,29 @@ function timerApplyScaleNow() {
     if (timerApplyScale) timerApplyScale(r.width, r.height);
 }
 
-// Arrastrar la ventana por la cabecera. Posición persistida.
+// Arrastrar la ventana. En modo normal solo por la cabecera; en modo minimalista
+// (cabecera oculta) toda la ventana es la agarradera. Posición persistida.
 function timerInitDrag() {
     const head = document.getElementById('tw-head');
     const w = document.getElementById('timer-widget');
     let dragging = false, startX = 0, startY = 0, startLeft = 0, startTop = 0;
-    head.addEventListener('mousedown', e => {
-        if (e.target.classList.contains('tw-close')) return;
+    const beginDrag = (e) => {
         dragging = true;
         const r = w.getBoundingClientRect();
         startX = e.clientX; startY = e.clientY;
-        startLeft = r.left;  startTop = r.top;
+        startLeft = r.left; startTop = r.top;
         e.preventDefault();
+    };
+    head.addEventListener('mousedown', e => {
+        if (e.target.classList.contains('tw-close')) return;
+        beginDrag(e);
+    });
+    // Drag de ventana entera SOLO cuando está en minimalista. Esquinas y close
+    // ya hacen stopPropagation, no llegan aquí.
+    w.addEventListener('mousedown', e => {
+        if (!w.classList.contains('is-minimal')) return;
+        if (e.target.closest('.tw-rh')) return;
+        beginDrag(e);
     });
     document.addEventListener('mousemove', e => {
         if (!dragging) return;
@@ -4147,6 +4177,15 @@ function timerInitDrag() {
         w.style.left = nx + 'px'; w.style.top = ny + 'px'; w.style.right = 'auto';
     });
     document.addEventListener('mouseup', () => { if (dragging) { dragging = false; timerSave(); } });
+}
+
+// Toggle modo minimalista (solo dígitos) ↔ completo. Persistido en localStorage.
+function timerToggleMinimal() {
+    const el = document.getElementById('timer-widget');
+    if (el.classList.contains('is-hidden')) return;   // si está oculto, R primero
+    el.classList.toggle('is-minimal');
+    timerApplyScaleNow();   // recalcular font-size con la nueva base
+    timerSave();
 }
 
 // Inicialización en DOMContentLoaded
@@ -4183,16 +4222,15 @@ window.addEventListener('beforeunload', () => {
     timerSave();
 });
 
-// Toggle global con R. Ignorar si el foco está en input/textarea o si hay
-// modificadores (Ctrl/Cmd/Alt) para no chocar con atajos del navegador.
+// Atajos globales: R = mostrar/ocultar el widget, M = minimalista/completo.
+// Ignorar si el foco está en input/textarea o si hay modificadores.
 document.addEventListener('keydown', e => {
-    if (e.key !== 'r' && e.key !== 'R') return;
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     const t = e.target;
     const tn = (t && t.tagName) ? t.tagName.toUpperCase() : '';
     if (tn === 'INPUT' || tn === 'TEXTAREA' || (t && t.isContentEditable)) return;
-    e.preventDefault();
-    timerToggle();
+    if (e.key === 'r' || e.key === 'R') { e.preventDefault(); timerToggle(); return; }
+    if (e.key === 'm' || e.key === 'M') { e.preventDefault(); timerToggleMinimal(); return; }
 });
 </script>
 
