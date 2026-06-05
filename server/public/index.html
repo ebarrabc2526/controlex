@@ -962,17 +962,28 @@ body {
   user-select: none;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   font-size: 16px;  /* base; JS lo recalcula con ResizeObserver */
-  resize: both; overflow: hidden;
-  /* Pista visual del handle de redimensionar en la esquina inferior-derecha
-     (encima del control nativo del navegador, que con fondo oscuro suele costar
-     verse). El control real lo da `resize: both`, esto solo es decorativo. */
-  background-image:
-    linear-gradient(135deg, transparent 60%, rgba(255,213,79,.35) 60%, rgba(255,213,79,.35) 65%, transparent 65%, transparent 75%, rgba(255,213,79,.35) 75%, rgba(255,213,79,.35) 80%, transparent 80%),
-    linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-  background-position: bottom right, center;
-  background-size: 14px 14px, 100% 100%;
-  background-repeat: no-repeat, no-repeat;
+  overflow: hidden;
+  /* Handles de redimensionar en las 4 esquinas: gestionados por JS, no por
+     el `resize` nativo del navegador (que solo da handle abajo-derecha). */
 }
+/* Zonas de agarre invisibles en cada esquina (16×16 px) con cursor adecuado. */
+.tw-rh {
+  position: absolute; width: 16px; height: 16px; z-index: 10;
+}
+.tw-rh-tl { top: 0; left: 0;  cursor: nwse-resize; }
+.tw-rh-tr { top: 0; right: 0; cursor: nesw-resize; }
+.tw-rh-bl { bottom: 0; left: 0;  cursor: nesw-resize; }
+.tw-rh-br { bottom: 0; right: 0; cursor: nwse-resize; }
+/* Esquinitas visibles tipo "corchete" amarillo — solo en hover sobre el widget. */
+.tw-rh::before {
+  content: ''; position: absolute; width: 8px; height: 8px;
+  border: 2px solid rgba(255,213,79,.55); opacity: 0; transition: opacity .15s;
+}
+.timer-widget:hover .tw-rh::before { opacity: 1; }
+.tw-rh-tl::before { top: 3px; left: 3px;  border-right: 0; border-bottom: 0; }
+.tw-rh-tr::before { top: 3px; right: 3px; border-left: 0;  border-bottom: 0; }
+.tw-rh-bl::before { bottom: 3px; left: 3px;  border-right: 0; border-top: 0; }
+.tw-rh-br::before { bottom: 3px; right: 3px; border-left: 0;  border-top: 0; }
 .timer-widget.is-hidden { display: none; }
 .tw-head {
   display: flex; align-items: center; justify-content: space-between;
@@ -1191,7 +1202,12 @@ body {
     <input type="number" id="tw-m" min="0" max="59" value="0" onchange="timerApplyCustom()" title="Minutos">
     <button class="tw-btn" onclick="timerApplyCustom()">Set</button>
   </div>
-  <div class="tw-hint">Pulsa R para mostrar/ocultar · arrastra la cabecera para mover</div>
+  <div class="tw-hint">Pulsa R para mostrar/ocultar · arrastra la cabecera para mover · esquinas para redimensionar</div>
+  <!-- Handles de resize en las 4 esquinas (gestión propia en JS, no `resize: both`). -->
+  <div class="tw-rh tw-rh-tl"></div>
+  <div class="tw-rh tw-rh-tr"></div>
+  <div class="tw-rh tw-rh-bl"></div>
+  <div class="tw-rh tw-rh-br"></div>
 </div>
 
 <!-- ── Content ─────────────────────────────────────────────────────────────── -->
@@ -4008,10 +4024,10 @@ function timerBeep() {
     } catch (_) {}
 }
 
-// Redimensionar el widget (resize: both) → escala automática del font-size para
-// que todos los elementos (dígitos, segundos, botones…) crezcan/encojan
-// proporcionalmente. La escala usa el mín(width/baseW, height/baseH) para que
-// nunca se desborde el contenido aunque achiques una dimensión.
+// Redimensionar el widget: handles propios en las 4 esquinas (TL/TR/BL/BR).
+// Cada esquina ajusta width/height (y left/top si afecta a una arista oeste/norte).
+// Un ResizeObserver detecta cualquier cambio de tamaño y reescala el font-size
+// proporcionalmente, así dígitos/segundos/botones siguen el tamaño del widget.
 let timerApplyScale = null;
 function timerInitResize() {
     const w = document.getElementById('timer-widget');
@@ -4030,6 +4046,71 @@ function timerInitResize() {
         saveTimer = setTimeout(timerSave, 250);
     });
     ro.observe(w);
+
+    // Resize por handles. `sides` indica qué aristas mueve esa esquina.
+    const corners = [
+        { sel: '.tw-rh-tl', sides: { left: true,  top: true  } },
+        { sel: '.tw-rh-tr', sides: { right: true, top: true  } },
+        { sel: '.tw-rh-bl', sides: { left: true,  bottom: true } },
+        { sel: '.tw-rh-br', sides: { right: true, bottom: true } }
+    ];
+    for (const c of corners) {
+        const h = w.querySelector(c.sel);
+        if (h) timerWireResizeHandle(h, w, c.sides);
+    }
+}
+
+// Engancha un handle de esquina a la lógica de resize. Stop-propagation para no
+// disparar también el listener de drag de la cabecera cuando la esquina cae
+// dentro de ella (caso TL/TR).
+function timerWireResizeHandle(handle, widget, sides) {
+    handle.addEventListener('mousedown', e => {
+        e.preventDefault(); e.stopPropagation();
+        const r = widget.getBoundingClientRect();
+        const startX = e.clientX, startY = e.clientY;
+        const startLeft = r.left, startTop = r.top;
+        const startW = r.width, startH = r.height;
+        const cs = getComputedStyle(widget);
+        const minW = parseInt(cs.minWidth)  || 220;
+        const minH = parseInt(cs.minHeight) || 200;
+        const maxW = window.innerWidth;
+        const maxH = window.innerHeight;
+
+        function onMove(ev) {
+            const dx = ev.clientX - startX;
+            const dy = ev.clientY - startY;
+            let newLeft = startLeft, newTop = startTop;
+            let newW = startW, newH = startH;
+            // Aristas este/sur: solo cambian el ancho/alto, no la esquina superior-izquierda.
+            if (sides.right)  newW = Math.max(minW, Math.min(maxW - startLeft, startW + dx));
+            if (sides.bottom) newH = Math.max(minH, Math.min(maxH - startTop,  startH + dy));
+            // Aristas oeste/norte: arrastran la esquina superior-izquierda y reducen el ancho/alto.
+            if (sides.left) {
+                const limDx = Math.max(-startLeft, Math.min(startW - minW, dx));
+                newLeft = startLeft + limDx;
+                newW = startW - limDx;
+            }
+            if (sides.top) {
+                const limDy = Math.max(-startTop, Math.min(startH - minH, dy));
+                newTop = startTop + limDy;
+                newH = startH - limDy;
+            }
+            widget.style.left  = newLeft + 'px';
+            widget.style.top   = newTop  + 'px';
+            widget.style.right = 'auto';
+            widget.style.width  = newW + 'px';
+            widget.style.height = newH + 'px';
+            // Reescalar fuente al instante para feedback fluido (el ResizeObserver lo haría también).
+            if (timerApplyScale) timerApplyScale(newW, newH);
+        }
+        function onUp() {
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', onUp);
+            timerSave();
+        }
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+    });
 }
 
 // Recalcula font-size al mostrar (si ya estaba pintado oculto, getBoundingClientRect
