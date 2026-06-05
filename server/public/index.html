@@ -947,6 +947,90 @@ body {
 @media (hover: none) {
   .card-hide-btn { opacity: .85; }
 }
+
+/* ── Countdown timer widget (R toggles, draggable, persists on reload) ─────── */
+.timer-widget {
+  position: fixed; top: 70px; right: 20px; z-index: 999;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  color: #fff; border-radius: 14px;
+  box-shadow: 0 8px 32px rgba(0,0,0,.40), 0 0 0 1px rgba(255,255,255,.08);
+  padding: 12px 18px 14px; min-width: 320px;
+  user-select: none;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+.timer-widget.is-hidden { display: none; }
+.tw-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 6px; cursor: move;
+}
+.tw-title { font-size: .72rem; letter-spacing: 2px; font-weight: 700; opacity: .85; }
+.tw-close {
+  background: transparent; border: 0; color: #fff; cursor: pointer;
+  font-size: 1rem; opacity: .7; padding: 0 4px;
+}
+.tw-close:hover { opacity: 1; }
+.tw-digits {
+  font-family: 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+  font-size: 5rem; line-height: 1; font-weight: 800;
+  text-align: center; letter-spacing: -2px; margin: 4px 0 0;
+  background: linear-gradient(135deg, #FFD54F 0%, #FF9800 50%, #F44336 100%);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent; color: transparent;
+  text-shadow: 0 0 30px rgba(255,152,0,.25);
+}
+.timer-widget.is-running .tw-digits {
+  background: linear-gradient(135deg, #A5D6A7 0%, #66BB6A 50%, #2E7D32 100%);
+  -webkit-background-clip: text; background-clip: text;
+}
+.timer-widget.is-finished .tw-digits {
+  background: linear-gradient(135deg, #FF5252 0%, #D50000 100%);
+  -webkit-background-clip: text; background-clip: text;
+  animation: timerFlash .6s ease-in-out infinite;
+}
+@keyframes timerFlash { 0%,100% { opacity: 1 } 50% { opacity: .35 } }
+.tw-seconds {
+  text-align: center; font-family: 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 1.1rem; opacity: .78; font-weight: 600;
+  margin: 2px 0 12px; letter-spacing: 1px;
+}
+.tw-controls { display: flex; gap: 6px; margin-bottom: 12px; justify-content: center; }
+.tw-btn {
+  background: rgba(255,255,255,.10);
+  border: 1px solid rgba(255,255,255,.20); color: #fff;
+  padding: 6px 14px; border-radius: 8px;
+  font-size: .82rem; font-weight: 600; cursor: pointer;
+  transition: background .15s, transform .05s;
+}
+.tw-btn:hover { background: rgba(255,255,255,.20); }
+.tw-btn:active { transform: scale(.97); }
+.tw-btn.primary { background: #66BB6A; border-color: #66BB6A; }
+.tw-btn.primary:hover { background: #4CAF50; }
+.tw-btn.warn { background: #FF9800; border-color: #FF9800; }
+.tw-btn.warn:hover { background: #F57C00; }
+.tw-presets { display: flex; gap: 6px; margin-bottom: 10px; justify-content: center; flex-wrap: wrap; }
+.tw-preset {
+  background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.18);
+  color: #fff; padding: 5px 10px; border-radius: 6px;
+  font-size: .78rem; cursor: pointer; transition: background .15s;
+}
+.tw-preset:hover { background: rgba(255,213,79,.25); border-color: rgba(255,213,79,.45); }
+.tw-custom {
+  display: flex; gap: 6px; align-items: center; justify-content: center;
+  font-size: .8rem;
+}
+.tw-custom input {
+  width: 44px;
+  background: rgba(255,255,255,.08); color: #fff;
+  border: 1px solid rgba(255,255,255,.20); border-radius: 6px;
+  padding: 4px 6px; font-family: monospace; font-size: .92rem; text-align: center;
+}
+.tw-custom input:focus { outline: none; border-color: #FFD54F; }
+.tw-custom input::-webkit-outer-spin-button,
+.tw-custom input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.tw-hint {
+  font-size: .65rem; opacity: .55; text-align: center; margin-top: 8px;
+  letter-spacing: .5px;
+}
 </style>
 </head>
 <body>
@@ -1067,6 +1151,33 @@ body {
   </div>
 </header>
 <div class="drawer-backdrop" id="drawer-backdrop" onclick="closeDrawer()"></div>
+
+<!-- ── Countdown timer widget (toggle with R) ───────────────────────────────── -->
+<div id="timer-widget" class="timer-widget is-hidden" role="dialog" aria-label="Temporizador">
+  <div class="tw-head" id="tw-head">
+    <span class="tw-title">⏱ TEMPORIZADOR</span>
+    <button class="tw-close" onclick="timerHide()" title="Ocultar (R)">✕</button>
+  </div>
+  <div class="tw-digits" id="tw-digits">02:00</div>
+  <div class="tw-seconds" id="tw-seconds">00 s</div>
+  <div class="tw-controls">
+    <button class="tw-btn primary" id="tw-start" onclick="timerToggleStart()">Iniciar</button>
+    <button class="tw-btn" onclick="timerReset()" title="Resetear al valor configurado">↻ Reset</button>
+  </div>
+  <div class="tw-presets">
+    <button class="tw-preset" onclick="timerSetMinutes(30)">30 min</button>
+    <button class="tw-preset" onclick="timerSetMinutes(60)">1 h</button>
+    <button class="tw-preset" onclick="timerSetMinutes(90)">1.5 h</button>
+    <button class="tw-preset" onclick="timerSetMinutes(120)">2 h</button>
+  </div>
+  <div class="tw-custom">
+    <input type="number" id="tw-h" min="0" max="23" value="2" onchange="timerApplyCustom()" title="Horas">
+    <span>:</span>
+    <input type="number" id="tw-m" min="0" max="59" value="0" onchange="timerApplyCustom()" title="Minutos">
+    <button class="tw-btn" onclick="timerApplyCustom()">Set</button>
+  </div>
+  <div class="tw-hint">Pulsa R para mostrar/ocultar · arrastra la cabecera para mover</div>
+</div>
 
 <!-- ── Content ─────────────────────────────────────────────────────────────── -->
 <div id="content">
@@ -3726,6 +3837,201 @@ function timeAgo(iso) {
 });
 document.addEventListener('keydown', e => {
     if (e.key === 'Escape') { closeModal('modal-msg'); closeModal('modal-cfg'); closeModal('modal-hidden'); closeModal('modal-quality'); closeModal('modal-mode'); closeFull(); closeDrawer(); }
+});
+
+// ── Countdown timer (R toggles visibility) ───────────────────────────────────
+// El estado se persiste en localStorage para que recargar la página no pierda
+// la cuenta atrás. La hora de finalización (endAt) es absoluta, así que sobrevive
+// a una recarga aunque el setInterval se detenga durante un instante.
+const TIMER_LS_KEY = 'controlex.timer.v1';
+let timerTotalMs   = 2 * 60 * 60 * 1000;  // valor base por defecto: 2 horas
+let timerEndAt     = null;                 // ms epoch — null cuando NO está corriendo
+let timerRemainMs  = timerTotalMs;         // ms restantes cuando está en pausa
+let timerFinished  = false;
+let timerInterval  = null;
+
+function timerLoad() {
+    try {
+        const raw = localStorage.getItem(TIMER_LS_KEY);
+        if (!raw) return;
+        const s = JSON.parse(raw);
+        if (typeof s.totalMs === 'number')   timerTotalMs  = Math.max(1000, s.totalMs);
+        if (typeof s.remainMs === 'number')  timerRemainMs = Math.max(0, s.remainMs);
+        if (s.running && typeof s.endAt === 'number') timerEndAt = s.endAt;
+        if (typeof s.left === 'number' && typeof s.top === 'number') {
+            const el = document.getElementById('timer-widget');
+            el.style.left = s.left + 'px';
+            el.style.top  = s.top + 'px';
+            el.style.right = 'auto';
+        }
+        if (s.visible) document.getElementById('timer-widget').classList.remove('is-hidden');
+    } catch (_) {}
+}
+function timerSave() {
+    try {
+        const el = document.getElementById('timer-widget');
+        const rect = el.getBoundingClientRect();
+        const moved = el.style.left !== '';
+        localStorage.setItem(TIMER_LS_KEY, JSON.stringify({
+            totalMs: timerTotalMs,
+            remainMs: timerRemainMs,
+            running: timerEndAt !== null,
+            endAt: timerEndAt,
+            visible: !el.classList.contains('is-hidden'),
+            left: moved ? rect.left : undefined,
+            top:  moved ? rect.top  : undefined
+        }));
+    } catch (_) {}
+}
+
+function timerShow() { document.getElementById('timer-widget').classList.remove('is-hidden'); timerSave(); timerRender(); }
+function timerHide() { document.getElementById('timer-widget').classList.add('is-hidden');    timerSave(); }
+function timerToggle() {
+    const el = document.getElementById('timer-widget');
+    el.classList.contains('is-hidden') ? timerShow() : timerHide();
+}
+
+function timerToggleStart() {
+    const el = document.getElementById('timer-widget');
+    const btn = document.getElementById('tw-start');
+    if (timerEndAt !== null) {
+        // corriendo → pausa
+        timerRemainMs = Math.max(0, timerEndAt - Date.now());
+        timerEndAt = null;
+        btn.textContent = 'Iniciar';
+        el.classList.remove('is-running');
+    } else {
+        // en pausa o tras reset → iniciar
+        if (timerRemainMs <= 0 || timerFinished) timerRemainMs = timerTotalMs;
+        timerFinished = false;
+        timerEndAt = Date.now() + timerRemainMs;
+        btn.textContent = 'Pausar';
+        el.classList.add('is-running');
+        el.classList.remove('is-finished');
+    }
+    timerSave(); timerRender();
+}
+
+function timerReset() {
+    timerEndAt = null;
+    timerRemainMs = timerTotalMs;
+    timerFinished = false;
+    const el = document.getElementById('timer-widget');
+    el.classList.remove('is-running', 'is-finished');
+    document.getElementById('tw-start').textContent = 'Iniciar';
+    timerSave(); timerRender();
+}
+
+function timerSetMinutes(totalMin) {
+    timerTotalMs  = Math.max(60_000, totalMin * 60_000);
+    timerRemainMs = timerTotalMs;
+    // Si estaba corriendo, reanuda con el nuevo total (más intuitivo que dejarlo en marcha con el viejo).
+    if (timerEndAt !== null) timerEndAt = Date.now() + timerTotalMs;
+    timerFinished = false;
+    document.getElementById('timer-widget').classList.remove('is-finished');
+    document.getElementById('tw-h').value = Math.floor(totalMin / 60);
+    document.getElementById('tw-m').value = totalMin % 60;
+    timerSave(); timerRender();
+}
+
+function timerApplyCustom() {
+    const h = Math.max(0, Math.min(23, +document.getElementById('tw-h').value || 0));
+    const m = Math.max(0, Math.min(59, +document.getElementById('tw-m').value || 0));
+    if (h === 0 && m === 0) return; // ignorar 00:00
+    timerSetMinutes(h * 60 + m);
+}
+
+function timerRender() {
+    const el = document.getElementById('timer-widget');
+    const ms = (timerEndAt !== null) ? Math.max(0, timerEndAt - Date.now()) : timerRemainMs;
+    const totalSec = Math.ceil(ms / 1000);
+    const h = Math.floor(totalSec / 3600);
+    const m = Math.floor((totalSec % 3600) / 60);
+    const s = totalSec % 60;
+    document.getElementById('tw-digits').textContent  = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+    document.getElementById('tw-seconds').textContent = `${String(s).padStart(2,'0')} s`;
+
+    if (timerEndAt !== null && ms <= 0 && !timerFinished) {
+        timerFinished = true;
+        timerEndAt = null;
+        timerRemainMs = 0;
+        el.classList.remove('is-running');
+        el.classList.add('is-finished');
+        document.getElementById('tw-start').textContent = 'Iniciar';
+        timerBeep();
+        timerSave();
+    }
+}
+
+// Pitido suave al terminar (3 beeps cortos descendentes). Best-effort: si el
+// navegador requiere gesto previo, simplemente no suena (no rompe nada).
+function timerBeep() {
+    try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const now = ctx.currentTime;
+        [880, 660, 440].forEach((freq, i) => {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.frequency.value = freq; osc.type = 'sine';
+            osc.connect(gain).connect(ctx.destination);
+            gain.gain.setValueAtTime(0.0001, now + i * 0.30);
+            gain.gain.exponentialRampToValueAtTime(0.25, now + i * 0.30 + 0.02);
+            gain.gain.exponentialRampToValueAtTime(0.0001, now + i * 0.30 + 0.25);
+            osc.start(now + i * 0.30); osc.stop(now + i * 0.30 + 0.26);
+        });
+        setTimeout(() => ctx.close(), 1500);
+    } catch (_) {}
+}
+
+// Arrastrar la ventana por la cabecera. Posición persistida.
+function timerInitDrag() {
+    const head = document.getElementById('tw-head');
+    const w = document.getElementById('timer-widget');
+    let dragging = false, startX = 0, startY = 0, startLeft = 0, startTop = 0;
+    head.addEventListener('mousedown', e => {
+        if (e.target.classList.contains('tw-close')) return;
+        dragging = true;
+        const r = w.getBoundingClientRect();
+        startX = e.clientX; startY = e.clientY;
+        startLeft = r.left;  startTop = r.top;
+        e.preventDefault();
+    });
+    document.addEventListener('mousemove', e => {
+        if (!dragging) return;
+        const nx = Math.max(0, Math.min(window.innerWidth  - 120, startLeft + (e.clientX - startX)));
+        const ny = Math.max(0, Math.min(window.innerHeight - 60,  startTop  + (e.clientY - startY)));
+        w.style.left = nx + 'px'; w.style.top = ny + 'px'; w.style.right = 'auto';
+    });
+    document.addEventListener('mouseup', () => { if (dragging) { dragging = false; timerSave(); } });
+}
+
+// Inicialización en DOMContentLoaded
+document.addEventListener('DOMContentLoaded', () => {
+    timerLoad();
+    // Refleja totalMs cargado en los inputs HH/MM
+    const totalMin = Math.floor(timerTotalMs / 60_000);
+    document.getElementById('tw-h').value = Math.floor(totalMin / 60);
+    document.getElementById('tw-m').value = totalMin % 60;
+    // Si quedó corriendo desde antes de recargar, restaurar etiqueta del botón
+    if (timerEndAt !== null) {
+        document.getElementById('tw-start').textContent = 'Pausar';
+        document.getElementById('timer-widget').classList.add('is-running');
+    }
+    timerRender();
+    timerInterval = setInterval(timerRender, 250);
+    timerInitDrag();
+});
+
+// Toggle global con R. Ignorar si el foco está en input/textarea o si hay
+// modificadores (Ctrl/Cmd/Alt) para no chocar con atajos del navegador.
+document.addEventListener('keydown', e => {
+    if (e.key !== 'r' && e.key !== 'R') return;
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    const t = e.target;
+    const tn = (t && t.tagName) ? t.tagName.toUpperCase() : '';
+    if (tn === 'INPUT' || tn === 'TEXTAREA' || (t && t.isContentEditable)) return;
+    e.preventDefault();
+    timerToggle();
 });
 </script>
 

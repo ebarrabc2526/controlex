@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "es.iesclaradelrey"
-version = "3.3.5"
+version = "3.3.6"
 
 repositories {
     mavenCentral()
