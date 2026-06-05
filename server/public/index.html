@@ -996,6 +996,7 @@ body {
 .timer-widget.is-minimal .tw-controls,
 .timer-widget.is-minimal .tw-presets,
 .timer-widget.is-minimal .tw-custom,
+.timer-widget.is-minimal .tw-sound,
 .timer-widget.is-minimal .tw-hint { display: none; }
 .timer-widget.is-minimal .tw-digits { margin: 0; line-height: 1; }
 .tw-head {
@@ -1066,6 +1067,17 @@ body {
 .tw-custom input:focus { outline: none; border-color: #FFD54F; }
 .tw-custom input::-webkit-outer-spin-button,
 .tw-custom input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.tw-sound {
+  display: flex; gap: 0.375em; align-items: center; justify-content: center;
+  font-size: 0.8em; margin-top: 0.5em;
+}
+.tw-sound select {
+  background: rgba(255,255,255,.10); color: #fff;
+  border: 1px solid rgba(255,255,255,.20); border-radius: 0.375em;
+  padding: 0.25em 0.5em; font-size: 1em; cursor: pointer;
+}
+.tw-sound select:focus { outline: none; border-color: #FFD54F; }
+.tw-sound select option { background: #1a1a2e; color: #fff; }
 .tw-hint {
   font-size: 0.65em; opacity: .55; text-align: center; margin-top: 0.5em;
   letter-spacing: 0.03em;
@@ -1214,6 +1226,17 @@ body {
     <span>:</span>
     <input type="number" id="tw-m" min="0" max="59" value="0" onchange="timerApplyCustom()" title="Minutos">
     <button class="tw-btn" onclick="timerApplyCustom()">Set</button>
+  </div>
+  <div class="tw-sound">
+    <span title="Sonido al finalizar">🔔</span>
+    <select id="tw-sound-sel" onchange="timerSetSound(this.value)" title="Sonido al finalizar">
+      <option value="beep">Pitido</option>
+      <option value="siren">Sirena</option>
+      <option value="ring">Ring</option>
+      <option value="bell">Campana</option>
+      <option value="gong">Gong</option>
+    </select>
+    <button class="tw-btn" onclick="timerTestSound()" title="Probar el sonido seleccionado">▶ Test</button>
   </div>
   <div class="tw-hint">R: mostrar/ocultar · M: modo mini/completo · arrastra la cabecera · esquinas para redimensionar</div>
   <!-- Handles de resize en las 4 esquinas (gestión propia en JS, no `resize: both`). -->
@@ -3893,6 +3916,7 @@ let timerEndAt     = null;                 // ms epoch — null cuando NO está 
 let timerRemainMs  = timerTotalMs;         // ms restantes cuando está en pausa
 let timerFinished  = false;
 let timerInterval  = null;
+let timerSound     = 'beep';   // 'beep' | 'siren' | 'ring' | 'bell' | 'gong'
 
 function timerLoad() {
     try {
@@ -3918,6 +3942,7 @@ function timerLoad() {
         if (typeof s.width  === 'number' && s.width  > 0) el.style.width  = s.width  + 'px';
         if (typeof s.height === 'number' && s.height > 0) el.style.height = s.height + 'px';
         if (s.minimal) el.classList.add('is-minimal');
+        if (typeof s.sound === 'string') timerSound = s.sound;
         if (s.visible) el.classList.remove('is-hidden');
     } catch (_) {}
 }
@@ -3934,6 +3959,7 @@ function timerSave() {
             endAt: timerEndAt,
             visible: !el.classList.contains('is-hidden'),
             minimal: el.classList.contains('is-minimal'),
+            sound: timerSound,
             left:   moved   ? rect.left   : undefined,
             top:    moved   ? rect.top    : undefined,
             width:  resized ? rect.width  : undefined,
@@ -4025,25 +4051,122 @@ function timerRender() {
     }
 }
 
-// Pitido suave al terminar (3 beeps cortos descendentes). Best-effort: si el
-// navegador requiere gesto previo, simplemente no suena (no rompe nada).
-function timerBeep() {
-    try {
-        const ctx = new (window.AudioContext || window.webkitAudioContext)();
-        const now = ctx.currentTime;
-        [880, 660, 440].forEach((freq, i) => {
-            const osc = ctx.createOscillator();
-            const gain = ctx.createGain();
-            osc.frequency.value = freq; osc.type = 'sine';
-            osc.connect(gain).connect(ctx.destination);
-            gain.gain.setValueAtTime(0.0001, now + i * 0.30);
-            gain.gain.exponentialRampToValueAtTime(0.25, now + i * 0.30 + 0.02);
-            gain.gain.exponentialRampToValueAtTime(0.0001, now + i * 0.30 + 0.25);
-            osc.start(now + i * 0.30); osc.stop(now + i * 0.30 + 0.26);
-        });
-        setTimeout(() => ctx.close(), 1500);
-    } catch (_) {}
+// Sonido al terminar — generado al vuelo con WebAudio (sin ficheros externos).
+// Dispatcher: elige uno de 5 timbres según timerSound (configurable por el usuario).
+// Best-effort: si el navegador requiere un gesto previo, no suena (no rompe nada).
+function timerBeep() { timerPlaySound(timerSound); }
+
+function timerPlaySound(kind) {
+    let ctx;
+    try { ctx = new (window.AudioContext || window.webkitAudioContext)(); }
+    catch (_) { return; }
+    const now = ctx.currentTime;
+    let dur = 0;
+    switch (kind) {
+        case 'siren': dur = playSiren(ctx, now); break;
+        case 'ring':  dur = playRing(ctx, now);  break;
+        case 'bell':  dur = playBell(ctx, now);  break;
+        case 'gong':  dur = playGong(ctx, now);  break;
+        case 'beep':
+        default:      dur = playBeep(ctx, now);  break;
+    }
+    setTimeout(() => { try { ctx.close(); } catch (_) {} }, dur * 1000 + 200);
 }
+
+// 3 pitidos cortos descendentes (880/660/440 Hz).
+function playBeep(ctx, now) {
+    [880, 660, 440].forEach((freq, i) => {
+        const o = ctx.createOscillator(), g = ctx.createGain();
+        o.type = 'sine'; o.frequency.value = freq;
+        o.connect(g).connect(ctx.destination);
+        const t = now + i * 0.30;
+        g.gain.setValueAtTime(0.0001, t);
+        g.gain.exponentialRampToValueAtTime(0.25, t + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.25);
+        o.start(t); o.stop(t + 0.26);
+    });
+    return 0.30 * 3;
+}
+
+// Sirena: barrido continuo 660↔880 Hz durante ~2.4 s.
+function playSiren(ctx, now) {
+    const dur = 2.4;
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(660, now);
+    const steps = 6;
+    for (let i = 0; i < steps; i++) {
+        o.frequency.linearRampToValueAtTime(i % 2 === 0 ? 880 : 660, now + (i + 1) * (dur / steps));
+    }
+    g.gain.setValueAtTime(0.0001, now);
+    g.gain.exponentialRampToValueAtTime(0.22, now + 0.05);
+    g.gain.setValueAtTime(0.22, now + dur - 0.15);
+    g.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+    o.connect(g).connect(ctx.destination);
+    o.start(now); o.stop(now + dur + 0.05);
+    return dur;
+}
+
+// Ring estilo teléfono: doble tono 700+900 Hz, 0.35 s on / 0.15 s off, repetido 3 veces.
+function playRing(ctx, now) {
+    const reps = 3, onMs = 0.35, offMs = 0.15;
+    for (let r = 0; r < reps; r++) {
+        const t = now + r * (onMs + offMs);
+        for (const freq of [700, 900]) {
+            const o = ctx.createOscillator(), g = ctx.createGain();
+            o.type = 'sine'; o.frequency.value = freq;
+            o.connect(g).connect(ctx.destination);
+            g.gain.setValueAtTime(0.0001, t);
+            g.gain.exponentialRampToValueAtTime(0.18, t + 0.01);
+            g.gain.exponentialRampToValueAtTime(0.0001, t + onMs);
+            o.start(t); o.stop(t + onMs + 0.02);
+        }
+    }
+    return reps * (onMs + offMs);
+}
+
+// Campana: 4 armónicos sobre un fundamental con decaimiento exponencial (~2.5 s).
+function playBell(ctx, now) {
+    const dur = 2.5;
+    const fundamentals = [523.25, 1046.5, 1568.0, 2093.0]; // C5, C6, G6, C7
+    const amps = [0.30, 0.18, 0.10, 0.05];
+    for (let i = 0; i < fundamentals.length; i++) {
+        const o = ctx.createOscillator(), g = ctx.createGain();
+        o.type = 'sine'; o.frequency.value = fundamentals[i];
+        o.connect(g).connect(ctx.destination);
+        g.gain.setValueAtTime(0.0001, now);
+        g.gain.exponentialRampToValueAtTime(amps[i], now + 0.01);
+        g.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+        o.start(now); o.stop(now + dur);
+    }
+    return dur;
+}
+
+// Gong: frecuencias graves (~55-330 Hz) con cola larga, mezcla sine+triangle.
+function playGong(ctx, now) {
+    const dur = 3.2;
+    const partials = [55, 110, 165, 220, 330];
+    const amps     = [0.35, 0.25, 0.16, 0.10, 0.06];
+    for (let i = 0; i < partials.length; i++) {
+        const o = ctx.createOscillator(), g = ctx.createGain();
+        o.type = i === 0 ? 'sine' : 'triangle';
+        o.frequency.value = partials[i];
+        o.connect(g).connect(ctx.destination);
+        g.gain.setValueAtTime(0.0001, now);
+        g.gain.exponentialRampToValueAtTime(amps[i], now + 0.03);
+        g.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+        o.start(now); o.stop(now + dur);
+    }
+    return dur;
+}
+
+function timerSetSound(value) {
+    if (!['beep','siren','ring','bell','gong'].includes(value)) return;
+    timerSound = value;
+    timerSave();
+}
+
+function timerTestSound() { timerPlaySound(timerSound); }
 
 // Redimensionar el widget: handles propios en las 4 esquinas (TL/TR/BL/BR).
 // Cada esquina ajusta width/height (y left/top si afecta a una arista oeste/norte).
@@ -4195,6 +4318,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const totalMin = Math.floor(timerTotalMs / 60_000);
     document.getElementById('tw-h').value = Math.floor(totalMin / 60);
     document.getElementById('tw-m').value = totalMin % 60;
+    // Refleja el sonido seleccionado en el desplegable
+    const soundSel = document.getElementById('tw-sound-sel');
+    if (soundSel) soundSel.value = timerSound;
     // Si quedó corriendo desde antes de recargar, restaurar etiqueta del botón
     if (timerEndAt !== null) {
         document.getElementById('tw-start').textContent = 'Pausar';
@@ -4228,7 +4354,7 @@ document.addEventListener('keydown', e => {
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     const t = e.target;
     const tn = (t && t.tagName) ? t.tagName.toUpperCase() : '';
-    if (tn === 'INPUT' || tn === 'TEXTAREA' || (t && t.isContentEditable)) return;
+    if (tn === 'INPUT' || tn === 'TEXTAREA' || tn === 'SELECT' || (t && t.isContentEditable)) return;
     if (e.key === 'r' || e.key === 'R') { e.preventDefault(); timerToggle(); return; }
     if (e.key === 'm' || e.key === 'M') { e.preventDefault(); timerToggleMinimal(); return; }
 });
