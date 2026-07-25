@@ -17,3 +17,8 @@ server/.env
 # OS
 .DS_Store
 Thumbs.db
+
+# Graphify: artefacto derivado. El hook post-commit lo regenera DESPUÉS
+# de cada commit, así que versionarlo deja el árbol sucio siempre.
+# La caché semántica sigue en disco. Misma convención que voc.
+graphify-out/
